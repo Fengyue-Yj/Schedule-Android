@@ -21,8 +21,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.schedule.app.data.AppDatabase
 import com.schedule.app.data.models.SettingEntity
+import com.schedule.app.ui.components.HeaderActionButton
 import com.schedule.app.ui.components.PageHeader
 import com.schedule.app.ui.theme.AppTheme
+import com.schedule.app.ui.theme.sectionTitle
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -77,7 +79,7 @@ fun CalendarScreen(
             .fillMaxSize()
             .background(AppTheme.colors.background)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = AppTheme.spacing.page)
             .padding(top = 4.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -155,28 +157,23 @@ private fun MonthHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        IconButton(onClick = onPrevious) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                contentDescription = "Previous Month",
-                tint = AppTheme.colors.deepGreen
-            )
-        }
+        HeaderActionButton(
+            title = "Previous Month",
+            systemImage = "chevron.left",
+            onClick = onPrevious
+        )
         
         Text(
             text = monthTitle,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = AppTheme.typography.sectionTitle,
             color = MaterialTheme.colorScheme.onSurface
         )
         
-        IconButton(onClick = onNext) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = "Next Month",
-                tint = AppTheme.colors.deepGreen
-            )
-        }
+        HeaderActionButton(
+            title = "Next Month",
+            systemImage = "chevron.right",
+            onClick = onNext
+        )
     }
 }
 

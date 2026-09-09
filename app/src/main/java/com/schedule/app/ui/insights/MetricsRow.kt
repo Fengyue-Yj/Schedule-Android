@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.schedule.app.ui.components.cardBackground
 import com.schedule.app.ui.theme.AppTheme
+import com.schedule.app.ui.theme.sectionTitle
 
 @Composable
 fun MetricsRow(
@@ -21,7 +22,7 @@ fun MetricsRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         MetricCard("Courses", coursesCount.toString(), modifier = Modifier.weight(1f))
         MetricCard("Assignments", "$completedAssignments/$totalAssignments", modifier = Modifier.weight(1f))
@@ -39,14 +40,14 @@ fun MetricCard(label: String, value: String, modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp, horizontal = 8.dp),
+                .padding(vertical = 12.dp, horizontal = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = AppTheme.colors.accent
+                style = AppTheme.typography.sectionTitle,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = label,

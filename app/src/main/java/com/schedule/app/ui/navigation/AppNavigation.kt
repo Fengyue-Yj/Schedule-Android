@@ -23,6 +23,7 @@ import com.schedule.app.ui.calendar.CalendarScreen
 import com.schedule.app.ui.insights.InsightsScreen
 import com.schedule.app.ui.schedule.HomeScreen
 import com.schedule.app.ui.tasks.TasksScreen
+import com.schedule.app.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
@@ -66,7 +67,10 @@ fun AppNavigation(database: AppDatabase) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                containerColor = AppTheme.colors.surface,
+                contentColor = AppTheme.colors.accent
+            ) {
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
@@ -75,6 +79,13 @@ fun AppNavigation(database: AppDatabase) {
                         icon = { Icon(item.icon, contentDescription = item.title) },
                         label = { Text(item.title) },
                         selected = currentRoute == item.route,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = AppTheme.colors.accent,
+                            selectedTextColor = AppTheme.colors.accent,
+                            indicatorColor = AppTheme.colors.selectedFill,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
                         onClick = {
                             navController.navigate(item.route) {
                                 popUpTo(navController.graph.startDestinationId) { saveState = true }

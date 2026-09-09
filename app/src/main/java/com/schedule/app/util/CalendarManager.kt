@@ -1,8 +1,9 @@
 package com.schedule.app.util
 
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.util.Calendar
 import java.util.UUID
-
 import com.schedule.app.data.models.WeekPattern
 
 data class CourseSeed(
@@ -30,7 +31,6 @@ object CalendarManager {
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
-        // Swift offset: (weekday + 5) % 7 where Sun=1, Mon=2...
         val weekday = calendar.get(Calendar.DAY_OF_WEEK)
         val offset = (weekday + 5) % 7
         calendar.add(Calendar.DAY_OF_YEAR, -offset)
@@ -55,12 +55,112 @@ object CalendarManager {
         return inspectCSV(csv).courses
     }
 
+    /**
+     * Decode byte array from uploaded CSV file with automatic charset detection:
+     * Handles UTF-8 with BOM, pure UTF-8, GB18030 / GBK / GB2312 (Excel default in China), and UTF-16.
+     */
+    fun decodeCsvBytes(bytes: ByteArray): String {
+        if (bytes.isEmpty()) return ""
+
+        // Check UTF-8 BOM (EF BB BF)
+        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) {
+            return String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+        }
+
+        // Check UTF-16 LE BOM (FF FE)
+        if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+            return String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+        }
+
+        // Check UTF-16 BE BOM (FE FF)
+        if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+            return String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+        }
+
+        // Try strict UTF-8 decoding
+        try {
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            val charBuffer = decoder.decode(ByteBuffer.wrap(bytes))
+            val text = charBuffer.toString()
+            if (!text.contains("\uFFFD")) {
+                return text
+            }
+        } catch (_: Exception) {}
+
+        // Fallback to GB18030 (covers GBK and GB2312, standard on Chinese Windows/Excel)
+        try {
+            val gbkCharset = java.nio.charset.Charset.forName("GB18030")
+            val text = String(bytes, gbkCharset)
+            if (!text.contains("\uFFFD")) {
+                return text
+            }
+        } catch (_: Exception) {}
+
+        return String(bytes, Charsets.UTF_8)
+    }
+
+    // Comprehensive Header Synonym Lists
+    private val nameKeys = listOf(
+        "name", "coursename", "course_name", "course", "title", "subject",
+        "课程名称", "课程名", "课程", "课名", "课程全称", "科目", "名称", "活动名称", "主题", "活动"
+    )
+
+    private val teacherKeys = listOf(
+        "teacher", "instructor", "lecturer", "prof", "professor",
+        "任课教师", "授课教师", "教师姓名", "任课老师", "授课老师", "教师", "老师", "讲师", "教授", "主持", "description", "描述", "备注"
+    )
+
+    private val classroomKeys = listOf(
+        "classroom", "location", "room", "place", "address", "venue",
+        "上课地点", "上课教室", "授课地点", "教学楼", "教室", "地点", "场地", "位置", "校区"
+    )
+
+    private val weekdayKeys = listOf(
+        "weekday", "day", "dayofweek", "星期", "周", "星期几", "周几", "上课星期", "授课星期", "礼拜"
+    )
+
+    private val combinedPeriodKeys = listOf(
+        "period", "periods", "section", "sections", "time",
+        "节次", "上课节次", "大节", "节", "时段", "课节", "上课时间"
+    )
+
+    private val startPeriodKeys = listOf(
+        "startperiod", "start_period", "start", "from",
+        "开始节次", "起始节次", "开始节", "起始节", "起始", "开始", "首节"
+    )
+
+    private val endPeriodKeys = listOf(
+        "endperiod", "end_period", "end", "to",
+        "结束节次", "终止节次", "结束节", "终止节", "结束", "末节"
+    )
+
+    private val weekPatternKeys = listOf(
+        "weekpattern", "week_pattern", "pattern", "weeks", "week",
+        "单双周", "周次", "周类型", "单双", "轮次", "上课周次", "周数"
+    )
+
     fun inspectCSV(csv: String): ImportPreview {
         var cleaned = csv.replace("\r\n", "\n").replace("\r", "\n")
         if (cleaned.startsWith("\uFEFF")) {
             cleaned = cleaned.substring(1)
         }
-        val (rows, unterminatedQuotes) = parseCSVRows(cleaned)
+
+        // If this is an iCalendar (.ics) format file
+        if (cleaned.contains("BEGIN:VCALENDAR") || cleaned.contains("BEGIN:VEVENT")) {
+            return inspectICS(cleaned)
+        }
+
+        // Auto-detect delimiter: comma, tab, or semicolon
+        val firstLine = cleaned.lineSequence().firstOrNull { it.trim().isNotEmpty() } ?: ""
+        val delimiter = when {
+            firstLine.count { it == '\t' } >= 2 -> '\t'
+            firstLine.count { it == ';' } >= 2 && firstLine.count { it == ',' } < 2 -> ';'
+            else -> ','
+        }
+
+        val (rows, unterminatedQuotes) = parseCSVRows(cleaned, delimiter)
         if (unterminatedQuotes) {
             return ImportPreview(rejectedRows = listOf(rows.size + 1))
         }
@@ -78,30 +178,57 @@ object CalendarManager {
             val row = rows[index]
             if (row.all { it.trim().isEmpty() }) continue
 
-            val name = valueFor(listOf("name", "课程", "课程名"), row, headerMap)?.trim()
-            val teacher = valueFor(listOf("teacher", "老师", "教师"), row, headerMap)?.trim()
-            val classroom = valueFor(listOf("classroom", "教室", "地点"), row, headerMap)?.trim()
-            val weekdayString = valueFor(listOf("weekday", "星期", "周", "星期几"), row, headerMap)
-            val startString = valueFor(listOf("startperiod", "开始节次", "起始节次", "开始节"), row, headerMap)
-            val endString = valueFor(listOf("endperiod", "结束节次", "终止节次", "结束节"), row, headerMap)
-            val weekPatternString = valueFor(listOf("weekpattern", "单双周", "周次"), row, headerMap) ?: ""
-
-            if (name.isNullOrEmpty() || teacher == null || classroom == null || 
-                weekdayString == null || startString == null || endString == null) {
+            // 1. Course Name (required)
+            val name = valueFor(nameKeys, row, headerMap)?.trim()
+            if (name.isNullOrEmpty()) {
                 rejectedRows.add(index + 1)
                 continue
             }
 
-            val weekday = parseWeekday(weekdayString)
-            val start = startString.trim().toIntOrNull()
-            val end = endString.trim().toIntOrNull()
+            // 2. Teacher & Classroom (optional, defaults to "")
+            val teacher = valueFor(teacherKeys, row, headerMap)?.trim() ?: ""
+            val classroom = valueFor(classroomKeys, row, headerMap)?.trim() ?: ""
+
+            // 3. Weekday & Periods
+            val weekdayString = valueFor(weekdayKeys, row, headerMap)
+            val startString = valueFor(startPeriodKeys, row, headerMap)
+            val endString = valueFor(endPeriodKeys, row, headerMap)
+            val combinedPeriodString = valueFor(combinedPeriodKeys, row, headerMap)
+            val weekPatternString = valueFor(weekPatternKeys, row, headerMap)
+
+            // Parse weekday
+            var weekday = weekdayString?.let { parseWeekday(it) }
+            // If weekday is not found in weekday column, check combinedPeriodString (e.g. "周一 1-2节")
+            if (weekday == null && combinedPeriodString != null) {
+                weekday = parseWeekday(combinedPeriodString)
+            }
+
+            // Parse periods
+            val periodRange = parsePeriodRange(startString, endString, combinedPeriodString)
+
+            if (weekday == null || periodRange == null) {
+                // Try fallback row inspection
+                val fallback = detectRowData(row)
+                if (fallback != null) {
+                    courses.add(
+                        CourseSeed(
+                            name = name,
+                            teacher = teacher.ifEmpty { fallback.teacher },
+                            classroom = classroom.ifEmpty { fallback.classroom },
+                            weekday = fallback.weekday,
+                            startPeriod = fallback.startPeriod,
+                            endPeriod = fallback.endPeriod,
+                            weekPattern = fallback.weekPattern
+                        )
+                    )
+                    continue
+                }
+
+                rejectedRows.add(index + 1)
+                continue
+            }
+
             val pattern = parseWeekPattern(weekPatternString)
-
-            if (weekday == null || start == null || end == null || 
-                start !in 1..12 || end !in start..12 || pattern == null) {
-                rejectedRows.add(index + 1)
-                continue
-            }
 
             courses.add(
                 CourseSeed(
@@ -109,8 +236,8 @@ object CalendarManager {
                     teacher = teacher,
                     classroom = classroom,
                     weekday = weekday,
-                    startPeriod = start,
-                    endPeriod = end,
+                    startPeriod = periodRange.first,
+                    endPeriod = periodRange.second,
                     weekPattern = pattern
                 )
             )
@@ -119,7 +246,7 @@ object CalendarManager {
         return ImportPreview(courses, rejectedRows)
     }
 
-    private fun parseCSVRows(csv: String): Pair<List<List<String>>, Boolean> {
+    private fun parseCSVRows(csv: String, delimiter: Char): Pair<List<List<String>>, Boolean> {
         val rows = mutableListOf<List<String>>()
         var currentRow = mutableListOf<String>()
         val currentField = StringBuilder()
@@ -136,7 +263,7 @@ object CalendarManager {
                 } else {
                     inQuotes = !inQuotes
                 }
-            } else if (char == ',' && !inQuotes) {
+            } else if (char == delimiter && !inQuotes) {
                 currentRow.add(currentField.toString())
                 currentField.clear()
             } else if ((char == '\n' || char == '\r') && !inQuotes) {
@@ -162,15 +289,8 @@ object CalendarManager {
     }
 
     private fun headerIndexMap(header: List<String>): Map<String, Int> {
-        val knownHeaders = setOf(
-            "name", "课程", "课程名",
-            "teacher", "老师", "教师",
-            "classroom", "教室", "地点",
-            "weekday", "星期", "周", "星期几",
-            "startperiod", "开始节次", "起始节次", "开始节",
-            "endperiod", "结束节次", "终止节次", "结束节",
-            "weekpattern", "单双周", "周次"
-        )
+        val allSynonyms = nameKeys + teacherKeys + classroomKeys + weekdayKeys +
+                combinedPeriodKeys + startPeriodKeys + endPeriodKeys + weekPatternKeys
 
         val map = mutableMapOf<String, Int>()
         for ((index, raw) in header.withIndex()) {
@@ -179,7 +299,10 @@ object CalendarManager {
                 map[key] = index
             }
         }
-        val hasHeader = header.any { knownHeaders.contains(it.trim().lowercase()) }
+        val hasHeader = header.any { h ->
+            val clean = h.trim().lowercase()
+            allSynonyms.any { syn -> clean == syn || clean.contains(syn) }
+        }
         return if (hasHeader) map else emptyMap()
     }
 
@@ -189,11 +312,19 @@ object CalendarManager {
             return if (index != null && index < row.size) row[index] else null
         }
 
+        // Exact match first
         for (key in keys) {
             val normalized = key.lowercase()
             val index = headerMap[normalized]
             if (index != null && index < row.size) {
                 return row[index]
+            }
+        }
+        // Substring match
+        for (key in keys) {
+            val entry = headerMap.entries.firstOrNull { it.key.contains(key.lowercase()) }
+            if (entry != null && entry.value < row.size) {
+                return row[entry.value]
             }
         }
 
@@ -202,11 +333,11 @@ object CalendarManager {
 
     private fun defaultIndex(keys: List<String>): Int? {
         val mapping = mapOf(
-            "name" to 0, "课程" to 0, "课程名" to 0,
-            "teacher" to 1, "老师" to 1, "教师" to 1,
-            "classroom" to 2, "教室" to 2, "地点" to 2,
-            "weekday" to 3, "星期" to 3, "周" to 3,
-            "startperiod" to 4, "开始节次" to 4, "起始节次" to 4,
+            "name" to 0, "课程" to 0, "课程名" to 0, "课程名称" to 0,
+            "teacher" to 1, "老师" to 1, "教师" to 1, "任课教师" to 1,
+            "classroom" to 2, "教室" to 2, "地点" to 2, "上课地点" to 2,
+            "weekday" to 3, "星期" to 3, "周" to 3, "星期几" to 3,
+            "startperiod" to 4, "开始节次" to 4, "起始节次" to 4, "节次" to 4,
             "endperiod" to 5, "结束节次" to 5, "终止节次" to 5,
             "weekpattern" to 6, "单双周" to 6, "周次" to 6
         )
@@ -218,29 +349,189 @@ object CalendarManager {
         return null
     }
 
-    private fun parseWeekday(raw: String): Int? {
-        val value = raw.trim().lowercase()
-        val numeric = value.toIntOrNull()
-        if (numeric != null && numeric in 1..7) return numeric
+    fun parseWeekday(raw: String): Int? {
+        val clean = raw.trim().lowercase()
+        val num = clean.toIntOrNull()
+        if (num != null && num in 1..7) return num
 
-        val map = mapOf(
-            "mon" to 1, "monday" to 1, "周一" to 1, "星期一" to 1, "一" to 1,
-            "tue" to 2, "tues" to 2, "tuesday" to 2, "周二" to 2, "星期二" to 2, "二" to 2,
-            "wed" to 3, "weds" to 3, "wednesday" to 3, "周三" to 3, "星期三" to 3, "三" to 3,
-            "thu" to 4, "thur" to 4, "thurs" to 4, "thursday" to 4, "周四" to 4, "星期四" to 4, "四" to 4,
-            "fri" to 5, "friday" to 5, "周五" to 5, "星期五" to 5, "五" to 5,
-            "sat" to 6, "saturday" to 6, "周六" to 6, "星期六" to 6, "六" to 6,
-            "sun" to 7, "sunday" to 7, "周日" to 7, "周天" to 7, "星期日" to 7, "日" to 7
-        )
-        return map[value]
+        if (clean.contains("一") || clean.contains("mon") || clean == "1") return 1
+        if (clean.contains("二") || clean.contains("tue") || clean == "2") return 2
+        if (clean.contains("三") || clean.contains("wed") || clean == "3") return 3
+        if (clean.contains("四") || clean.contains("thu") || clean == "4") return 4
+        if (clean.contains("五") || clean.contains("fri") || clean == "5") return 5
+        if (clean.contains("六") || clean.contains("sat") || clean == "6") return 6
+        if (clean.contains("日") || clean.contains("天") || clean.contains("sun") || clean == "7") return 7
+        return null
     }
 
-    private fun parseWeekPattern(raw: String): WeekPattern? {
-        return when (raw.trim().lowercase()) {
-            "", "all", "全周", "全部", "每周" -> WeekPattern.ALL
-            "odd", "单", "单周" -> WeekPattern.ODD
-            "even", "双", "双周" -> WeekPattern.EVEN
-            else -> null
+    fun parsePeriodRange(startString: String?, endString: String?, combinedString: String?): Pair<Int, Int>? {
+        // Check combined or startString for a range like "1-2节", "3~4", "1-3", "第1-2节"
+        val candidate = (combinedString ?: startString ?: "").trim()
+        val numbers = Regex("""\d+""").findAll(candidate).map { it.value.toInt() }.toList()
+        if (numbers.size >= 2) {
+            val s = numbers[0].coerceIn(1, 12)
+            val e = numbers[1].coerceIn(s, 12)
+            return Pair(s, e)
+        } else if (numbers.size == 1 && (endString == null || endString.isBlank())) {
+            val s = numbers[0].coerceIn(1, 12)
+            return Pair(s, s)
+        }
+
+        // Separate start and end
+        val s = startString?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }?.coerceIn(1, 12)
+        val e = endString?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }?.coerceIn(1, 12)
+        if (s != null && e != null) {
+            return Pair(minOf(s, e), maxOf(s, e))
+        } else if (s != null) {
+            return Pair(s, s)
+        }
+        return null
+    }
+
+    fun parseWeekPattern(raw: String?): WeekPattern {
+        if (raw.isNullOrBlank()) return WeekPattern.ALL
+        val clean = raw.trim().lowercase()
+        if (clean.contains("单") || clean.contains("odd")) return WeekPattern.ODD
+        if (clean.contains("双") || clean.contains("even")) return WeekPattern.EVEN
+        // Any other specification like "1-16周", "前八周", "每周" defaults safely to ALL
+        return WeekPattern.ALL
+    }
+
+    private data class FallbackRow(
+        val teacher: String,
+        val classroom: String,
+        val weekday: Int,
+        val startPeriod: Int,
+        val endPeriod: Int,
+        val weekPattern: WeekPattern
+    )
+
+    private fun detectRowData(row: List<String>): FallbackRow? {
+        var foundWeekday: Int? = null
+        var foundPeriod: Pair<Int, Int>? = null
+        var pattern = WeekPattern.ALL
+        val otherCells = mutableListOf<String>()
+
+        for (cell in row) {
+            val text = cell.trim()
+            if (text.isEmpty()) continue
+
+            if (foundWeekday == null) {
+                val w = parseWeekday(text)
+                if (w != null) {
+                    foundWeekday = w
+                    continue
+                }
+            }
+
+            if (foundPeriod == null) {
+                val p = parsePeriodRange(null, null, text)
+                if (p != null) {
+                    foundPeriod = p
+                    continue
+                }
+            }
+
+            if (text.contains("单") || text.contains("双")) {
+                pattern = parseWeekPattern(text)
+                continue
+            }
+
+            otherCells.add(text)
+        }
+
+        if (foundWeekday != null && foundPeriod != null) {
+            val teacher = otherCells.getOrNull(0) ?: ""
+            val classroom = otherCells.getOrNull(1) ?: ""
+            return FallbackRow(teacher, classroom, foundWeekday, foundPeriod.first, foundPeriod.second, pattern)
+        }
+        return null
+    }
+
+    fun inspectICS(ics: String): ImportPreview {
+        val courses = mutableListOf<CourseSeed>()
+        val events = ics.split("BEGIN:VEVENT")
+        for (event in events.drop(1)) {
+            val chunk = event.substringBefore("END:VEVENT")
+            var summary = ""
+            var location = ""
+            var description = ""
+            var dtstart = ""
+            var dtend = ""
+            var rrule = ""
+
+            for (line in chunk.lines()) {
+                val trimmed = line.trim()
+                if (trimmed.startsWith("SUMMARY:", ignoreCase = true)) {
+                    summary = trimmed.substringAfter(":").trim()
+                } else if (trimmed.startsWith("LOCATION:", ignoreCase = true)) {
+                    location = trimmed.substringAfter(":").trim()
+                } else if (trimmed.startsWith("DESCRIPTION:", ignoreCase = true)) {
+                    description = trimmed.substringAfter(":").trim()
+                } else if (trimmed.startsWith("DTSTART", ignoreCase = true)) {
+                    dtstart = trimmed.substringAfter(":").trim()
+                } else if (trimmed.startsWith("DTEND", ignoreCase = true)) {
+                    dtend = trimmed.substringAfter(":").trim()
+                } else if (trimmed.startsWith("RRULE:", ignoreCase = true)) {
+                    rrule = trimmed.substringAfter(":").trim()
+                }
+            }
+
+            if (summary.isBlank() || dtstart.isBlank()) continue
+
+            val timeMatch = Regex("""(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})""").find(dtstart)
+            if (timeMatch != null) {
+                val (year, month, day, hourStr, minStr) = timeMatch.destructured
+                val cal = Calendar.getInstance().apply {
+                    set(year.toInt(), month.toInt() - 1, day.toInt(), hourStr.toInt(), minStr.toInt())
+                }
+                val weekday = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
+                val startPeriod = hourToPeriod(hourStr.toInt(), minStr.toInt())
+
+                val endPeriod = if (dtend.isNotBlank()) {
+                    val endMatch = Regex("""(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})""").find(dtend)
+                    if (endMatch != null) {
+                        val endHour = endMatch.groupValues[4].toInt()
+                        val endMin = endMatch.groupValues[5].toInt()
+                        hourToPeriod(endHour, endMin).coerceAtLeast(startPeriod)
+                    } else startPeriod
+                } else startPeriod
+
+                val pattern = if (rrule.contains("INTERVAL=2")) WeekPattern.ODD else WeekPattern.ALL
+
+                courses.add(
+                    CourseSeed(
+                        name = summary,
+                        teacher = description,
+                        classroom = location,
+                        weekday = weekday,
+                        startPeriod = startPeriod.coerceIn(1, 12),
+                        endPeriod = endPeriod.coerceIn(startPeriod, 12),
+                        weekPattern = pattern
+                    )
+                )
+            }
+        }
+        return ImportPreview(courses)
+    }
+
+    private fun hourToPeriod(hour: Int, min: Int): Int {
+        return when {
+            hour < 8 || (hour == 8 && min <= 55) -> 1
+            hour == 9 || (hour == 8 && min > 55) -> 2
+            hour == 10 && min <= 55 -> 3
+            hour == 11 || (hour == 10 && min > 55) -> 4
+            hour == 13 && min <= 55 -> 5
+            hour == 14 || (hour == 13 && min > 55) -> 6
+            hour == 15 && min <= 55 -> 7
+            hour == 16 || (hour == 15 && min > 55) -> 8
+            hour == 17 -> 9
+            hour == 18 || (hour == 19 && min <= 20) -> 10
+            hour == 19 -> 11
+            hour >= 20 -> 12
+            else -> 1
         }
     }
 }
+
+

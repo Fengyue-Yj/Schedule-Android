@@ -64,7 +64,8 @@ fun SettingsScreen(
                 try {
                     val content = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { stream ->
-                            stream.bufferedReader(Charsets.UTF_8).readText()
+                            val bytes = stream.readBytes()
+                            CalendarManager.decodeCsvBytes(bytes)
                         } ?: ""
                     }
                     if (content.isNotBlank()) {
@@ -76,10 +77,10 @@ fun SettingsScreen(
                         )
                         importResult = summary
                     } else {
-                        importError = "The selected file was empty."
+                        importError = "所选文件内容为空，请重新选择。"
                     }
                 } catch (e: Exception) {
-                    importError = e.localizedMessage ?: "Failed to import CSV."
+                    importError = e.localizedMessage ?: "导入日历/课表文件失败。"
                 }
             }
         }
@@ -282,17 +283,17 @@ fun SettingsScreen(
             // Import Section
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Import Schedule", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("导入课表 / 日历文件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Import courses and sessions from a standard CSV file with columns: Name, Teacher, Classroom, Weekday, Start, End, Pattern.",
+                        "支持标准课表 CSV 文件及 iCalendar (.ics) 日历文件。自动识别课程名称、教师、教室、星期及节次（如1-2节）。兼容 UTF-8、GBK 编码。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedButton(
-                        onClick = { csvPicker.launch("text/*") },
+                        onClick = { csvPicker.launch("*/*") },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Import from CSV File")
+                        Text("选择 CSV / 日历文件导入")
                     }
                 }
             }

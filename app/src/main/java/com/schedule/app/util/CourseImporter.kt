@@ -14,11 +14,14 @@ data class ImportSummary(
 ) {
     val message: String
         get() {
-            var text = "Added $courses courses and $sessions sessions. Skipped $duplicates duplicate sessions."
+            var text = "成功导入 $courses 门课程，共 $sessions 个课时节次。"
+            if (duplicates > 0) {
+                text += " 已自动跳过 $duplicates 个重复课时。"
+            }
             if (rejectedRows.isNotEmpty()) {
                 val rows = rejectedRows.take(12).joinToString(", ")
                 val dots = if (rejectedRows.size > 12) "…" else ""
-                text += "\nInvalid rows skipped: $rows$dots. Use a course name, weekday 1–7 and periods 1–12 with start ≤ end."
+                text += "\n部分未能识别已跳过: 第 $rows$dots 行。"
             }
             return text
         }
@@ -26,10 +29,10 @@ data class ImportSummary(
 
 class ImportError(message: String) : Exception(message) {
     companion object {
-        fun encoding() = ImportError("Save the CSV as UTF-8 and try again.")
+        fun encoding() = ImportError("请将 CSV 文件保存为 UTF-8 编码后再试。")
         fun noValidRows(rows: List<Int>): ImportError {
-            val rowsStr = if (rows.isEmpty()) "" else " Invalid rows: ${rows.take(12).joinToString(", ")}."
-            return ImportError("No valid courses were found. Check the CSV headers, names and period ranges.$rowsStr")
+            val rowsStr = if (rows.isEmpty()) "" else " 未识别行号: ${rows.take(12).joinToString(", ")}。"
+            return ImportError("未能从该文件中识别出有效课程。请检查 CSV 文件是否包含课程名称、星期与节次。$rowsStr")
         }
     }
 }

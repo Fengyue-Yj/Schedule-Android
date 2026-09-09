@@ -26,6 +26,9 @@ interface AssignmentDao {
     @Query("SELECT * FROM assignments WHERE sourceID = :sourceId LIMIT 1")
     suspend fun getBySourceId(sourceId: String): AssignmentEntity?
 
+    @Query("SELECT sourceID FROM assignments WHERE sourceID IS NOT NULL AND termId = :termId")
+    fun getImportedSourceIds(termId: String): Flow<List<String>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(assignment: AssignmentEntity)
 

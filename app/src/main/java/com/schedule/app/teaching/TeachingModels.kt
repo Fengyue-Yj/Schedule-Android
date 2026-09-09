@@ -52,27 +52,56 @@ data class TeachingSnapshot(
 )
 
 object TeachingURLs {
-    val origin = "https://course.pku.edu.cn"
-    val login = "https://iaaa.pku.edu.cn/iaaa/oauth.jsp"
-    val home = "$origin/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1"
-    val me = "$origin/webapps/blackboard/execute/editMe"
+    const val origin = "https://course.pku.edu.cn"
+    const val login = "https://course.pku.edu.cn/webapps/bb-sso-BBLEARN/login.html"
+    const val home = "$origin/webapps/portal/execute/tabs/tabAction?tab_tab_group_id=_1_1"
+    const val me = "$origin/learn/api/public/v1/users/me"
 
-    fun course(courseId: String) = "$origin/webapps/blackboard/execute/modulepage/view?course_id=$courseId&cmp_tab_id=_1_1&editMode=false&mode=cpview"
+    fun course(courseId: String) = "$origin/webapps/blackboard/execute/announcement?method=search&context=course_entry&course_id=$courseId&handle=announcements_entry&mode=view"
     fun content(courseId: String, contentId: String) = "$origin/webapps/blackboard/content/listContent.jsp?course_id=$courseId&content_id=$contentId"
-    fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?course_id=$courseId&content_id=$contentId"
+    fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?action=newAttempt&course_id=$courseId&content_id=$contentId"
     
+    fun trusted(url: String): Boolean {
+        val uri = try { java.net.URI(url) } catch (e: Exception) { return false }
+        val host = uri.host?.lowercase() ?: return false
+        return host == "pku.edu.cn" || host.endsWith(".pku.edu.cn")
+    }
+
     fun resolve(href: String): String? {
-        if (href.startsWith("http")) return href
-        if (href.startsWith("/")) return "$origin$href"
-        return null
+        val cleaned = href.trim().replace("@X@EmbeddedFile.requestUrlStub@X@", "/")
+        if (cleaned.isEmpty() || cleaned.startsWith("#")) return null
+        val fullUrl = if (cleaned.startsWith("http://") || cleaned.startsWith("https://")) {
+            cleaned
+        } else if (cleaned.startsWith("/")) {
+            "$origin$cleaned"
+        } else {
+            "$origin/$cleaned"
+        }
+        val uri = try { java.net.URI(fullUrl) } catch (e: Exception) { return null }
+        val host = uri.host?.lowercase() ?: return null
+        if (host != "pku.edu.cn" && !host.endsWith(".pku.edu.cn")) return null
+        if (uri.scheme?.equals("http", ignoreCase = true) == true) {
+            return fullUrl.replaceFirst("http://", "https://")
+        }
+        return fullUrl
     }
 
     fun digest(input: String): String {
-        return input.hashCode().toString()
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
+            bytes.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            input.hashCode().toString()
+        }
     }
 
     fun filename(url: String): String {
-        return URL(url).path.substringAfterLast("/")
+        return try {
+            URL(url).path.substringAfterLast("/")
+        } catch (e: Exception) {
+            "attachment"
+        }
     }
 }
 

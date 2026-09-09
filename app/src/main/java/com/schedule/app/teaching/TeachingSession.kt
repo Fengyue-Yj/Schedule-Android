@@ -14,14 +14,21 @@ class TeachingSession {
         val url = URL(urlString)
         val connection = url.openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-        val cookies = cookieManager.getCookie(urlString)
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 15000
+        connection.readTimeout = 25000
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Schedule/1.0")
+        connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5")
+        connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+        
+        val cookies = cookieManager.getCookie(urlString) ?: cookieManager.getCookie("https://course.pku.edu.cn")
         if (cookies != null) {
             connection.setRequestProperty("Cookie", cookies)
         }
         
         try {
             val responseCode = connection.responseCode
-            if (responseCode == 200) {
+            if (responseCode in 200..299) {
                 InputStreamReader(connection.inputStream, "UTF-8").use { it.readText() }
             } else {
                 throw TeachingError.NetworkError("HTTP $responseCode")
@@ -33,13 +40,16 @@ class TeachingSession {
 
     fun isLoggedIn(): Boolean {
         val cookies = cookieManager.getCookie("https://course.pku.edu.cn") ?: return false
-        return cookies.contains("s_session_id")
+        return cookies.isNotBlank() && (
+            cookies.contains("session", ignoreCase = true) ||
+            cookies.contains("JSESSIONID", ignoreCase = true) ||
+            cookies.contains("s_session", ignoreCase = true) ||
+            cookies.contains("pku", ignoreCase = true)
+        )
     }
 
     fun getUserID(): String? {
         val cookies = cookieManager.getCookie("https://course.pku.edu.cn") ?: return null
-        // Extract a session identifier or account ID from cookies if needed
-        // For simplicity, just return a hashed version of cookies
         return cookies.hashCode().toString()
     }
 }

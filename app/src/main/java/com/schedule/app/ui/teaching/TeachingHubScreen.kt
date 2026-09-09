@@ -47,9 +47,12 @@ fun TeachingHubScreen(
     }
 
     if (!isSignedIn) {
-        TeachingSignInScreen(onSignInSuccess = {
-            scope.launch { store.refresh() }
-        })
+        TeachingSignInScreen(
+            onNavigateBack = onNavigateBack,
+            onSignInSuccess = {
+                scope.launch { store.refresh() }
+            }
+        )
         return
     }
 

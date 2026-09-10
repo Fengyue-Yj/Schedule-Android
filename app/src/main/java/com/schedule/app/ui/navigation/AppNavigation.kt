@@ -1,8 +1,14 @@
 package com.schedule.app.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -12,7 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -25,7 +38,6 @@ import com.schedule.app.ui.schedule.HomeScreen
 import com.schedule.app.ui.tasks.TasksScreen
 import com.schedule.app.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
 
 enum class BottomNavItem(val route: String, val title: String, val icon: ImageVector) {
@@ -66,58 +78,133 @@ fun AppNavigation(database: AppDatabase) {
     }
 
     Scaffold(
-        bottomBar = {
-            NavigationBar(
-                containerColor = AppTheme.colors.surface,
-                contentColor = AppTheme.colors.accent
+        containerColor = AppTheme.colors.background
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = innerPadding.calculateTopPadding())
+        ) {
+            NavHost(
+                navController = navController,
+                startDestination = BottomNavItem.Schedule.route,
+                modifier = Modifier.fillMaxSize()
             ) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route
-
-                BottomNavItem.entries.forEach { item ->
-                    NavigationBarItem(
-                        icon = { Icon(item.icon, contentDescription = item.title) },
-                        label = { Text(item.title) },
-                        selected = currentRoute == item.route,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = AppTheme.colors.accent,
-                            selectedTextColor = AppTheme.colors.accent,
-                            indicatorColor = AppTheme.colors.selectedFill,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        onClick = {
-                            navController.navigate(item.route) {
-                                popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
+                composable(BottomNavItem.Schedule.route) {
+                    HomeScreen(
+                        term = term,
+                        database = database,
+                        onTermChanged = { newTerm -> activeTermId = newTerm.id }
                     )
                 }
+                composable(BottomNavItem.Calendar.route) {
+                    CalendarScreen(term = term, database = database)
+                }
+                composable(BottomNavItem.Tasks.route) {
+                    TasksScreen(term = term, database = database)
+                }
+                composable(BottomNavItem.Insights.route) {
+                    InsightsScreen(term = term, database = database)
+                }
             }
+
+            FloatingBottomBar(
+                navController = navController,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            )
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = BottomNavItem.Schedule.route,
-            modifier = Modifier.padding(innerPadding)
+    }
+}
+
+@Composable
+fun FloatingBottomBar(
+    navController: NavController,
+    modifier: Modifier = Modifier
+) {
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route ?: BottomNavItem.Schedule.route
+    val isDark = isSystemInDarkTheme()
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .shadow(
+                elevation = 14.dp,
+                shape = RoundedCornerShape(32.dp),
+                spotColor = Color(0x3D000000),
+                ambientColor = Color(0x18000000)
+            ),
+        shape = RoundedCornerShape(32.dp),
+        color = if (isDark) Color(0xF21C2621) else Color(0xF7FFFFFF),
+        border = BorderStroke(
+            width = 0.8.dp,
+            color = if (isDark) Color(0x33FFFFFF) else Color(0x1A000000)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            composable(BottomNavItem.Schedule.route) {
-                HomeScreen(
-                    term = term,
-                    database = database,
-                    onTermChanged = { newTerm -> activeTermId = newTerm.id }
+            BottomNavItem.entries.forEach { item ->
+                val isSelected = currentRoute == item.route
+                val animatedBgColor by animateColorAsState(
+                    targetValue = if (isSelected) AppTheme.colors.selectedFill else Color.Transparent,
+                    animationSpec = tween(200),
+                    label = "tabBg"
                 )
-            }
-            composable(BottomNavItem.Calendar.route) {
-                CalendarScreen(term = term, database = database)
-            }
-            composable(BottomNavItem.Tasks.route) {
-                TasksScreen(term = term, database = database)
-            }
-            composable(BottomNavItem.Insights.route) {
-                InsightsScreen(term = term, database = database)
+                val animatedContentColor by animateColorAsState(
+                    targetValue = if (isSelected) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    animationSpec = tween(200),
+                    label = "tabContent"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(animatedBgColor)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (currentRoute != item.route) {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.title,
+                            tint = animatedContentColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = animatedContentColor
+                        )
+                    }
+                }
             }
         }
     }

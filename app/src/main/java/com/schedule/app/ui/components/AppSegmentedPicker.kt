@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -33,11 +34,12 @@ fun <T> AppSegmentedPicker(
                 selected = isSelected,
                 onClick = { onSelectionChange(option) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                icon = {},
                 colors = SegmentedButtonDefaults.colors(
                     activeContainerColor = AppTheme.colors.selectedFill,
                     activeContentColor = AppTheme.colors.accent,
                     inactiveContainerColor = Color.Transparent,
-                    inactiveContentColor = Color.Gray // secondary
+                    inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             ) {
                 Text(

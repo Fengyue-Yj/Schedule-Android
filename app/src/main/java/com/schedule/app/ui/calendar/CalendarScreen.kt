@@ -140,6 +140,7 @@ fun CalendarScreen(
             assignments = assignments,
             exams = exams
         )
+        Spacer(Modifier.height(100.dp))
     }
 }
 

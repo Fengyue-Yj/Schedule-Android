@@ -111,8 +111,14 @@ fun TasksScreen(
 
     Scaffold(
         containerColor = AppTheme.colors.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Column(modifier = Modifier.background(AppTheme.colors.background)) {
+            Column(
+                modifier = Modifier
+                    .background(AppTheme.colors.background)
+                    .padding(horizontal = AppTheme.Spacing.page)
+                    .padding(top = 4.dp)
+            ) {
                 PageHeader(
                     title = "Tasks",
                     trailing = {
@@ -157,13 +163,14 @@ fun TasksScreen(
                         }
                     }
                 )
+                Spacer(modifier = Modifier.height(12.dp))
                 AppSegmentedPicker(
                     label = "Section",
                     selection = selection,
                     options = TaskSection.entries.toList(),
                     title = { it.title },
                     onSelectionChange = { selection = it },
-                    modifier = Modifier.padding(horizontal = AppTheme.Spacing.page)
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -194,7 +201,7 @@ fun TasksScreen(
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(AppTheme.Spacing.row),
-                            contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp)
+                            contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp)
                         ) {
                             items(sortedAssignments) { item ->
                                 val course = courses.find { it.id == item.courseId }
@@ -228,7 +235,7 @@ fun TasksScreen(
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(AppTheme.Spacing.row),
-                            contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp)
+                            contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp)
                         ) {
                             items(sortedExams) { item ->
                                 ExamRow(

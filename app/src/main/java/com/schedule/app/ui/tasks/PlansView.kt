@@ -68,7 +68,7 @@ fun PlansView(
     } else {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(AppTheme.Spacing.row),
-            contentPadding = PaddingValues(top = 6.dp, bottom = 24.dp)
+            contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp)
         ) {
             items(visiblePlans) { plan ->
                 val isCompleted = plan.planStatus == PlanStatus.COMPLETED

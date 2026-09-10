@@ -58,6 +58,26 @@ object TeachingParser {
         return result
     }
 
+    fun cleanHtmlToText(element: Element?): String {
+        if (element == null) return ""
+        val clone = element.clone()
+        clone.select("br").append("\\n")
+        clone.select("p").prepend("\\n\\n")
+        clone.select("div").prepend("\\n")
+        clone.select("li").prepend("\\n• ")
+        return clone.text().replace("\\n", "\n").replace(Regex("\n{3,}"), "\n\n").trim()
+    }
+
+    fun parseAnnouncementUrl(html: String, courseId: String): String? {
+        val doc = Jsoup.parse(html)
+        val link = doc.select("#courseMenuPalette_contents li a, #courseMenuPalette_div li a, a.courseMenuLink").firstOrNull {
+            val text = it.text().trim()
+            val href = it.attr("href")
+            text.contains("公告") || text.contains("通知") || text.contains("Announcement", ignoreCase = true) || href.contains("announcement")
+        }
+        return link?.attr("href")?.let { TeachingURLs.resolve(it) }
+    }
+
     fun parseAnnouncements(html: String, course: TeachingCourse): List<TeachingItem> {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
@@ -77,13 +97,14 @@ object TeachingParser {
                 if (text.contains("发布") || text.contains("posted on", ignoreCase = true)) {
                     published = text
                 } else if (text.isNotEmpty()) {
-                    content += if (content.isEmpty()) text else "\n$text"
+                    val formatted = cleanHtmlToText(next)
+                    content += if (content.isEmpty()) formatted else "\n$formatted"
                 }
                 next = next.nextElementSibling()
                 count++
             }
             if (content.isEmpty()) {
-                content = parent.select(".vtbegenerated, .details").text()
+                content = cleanHtmlToText(parent.select(".vtbegenerated, .details").firstOrNull() ?: parent)
             }
             val rawID = if (heading.id().isEmpty()) (if (parent.tagName() == "li") parent.id() else "") else heading.id()
             val id = if (rawID.isEmpty()) TeachingURLs.digest(title + published) else rawID
@@ -163,10 +184,16 @@ object TeachingParser {
             
             val assignment = alt.contains("作业") || alt.contains("assignment") || (url != null && url.contains("uploadAssignment"))
             val detail = if (children.size > 2) children[2] else row
-            val body = detail.select(".vtbegenerated").text()
-            val attachments = parseAttachments(detail).toMutableList()
+            val body = cleanHtmlToText(detail.select(".vtbegenerated").firstOrNull() ?: detail)
+            val attachments = parseAttachments(row).toMutableList()
             if (alt == "文件" || alt == "file") {
-                attachments.add(0, TeachingAttachment(title, TeachingURLs.origin + "/webapps/blackboard/execute/content/file?course_id=${course.id}&content_id=$id&mode=view"))
+                if (attachments.isEmpty()) {
+                    if (url != null && (url.contains("bbcswebdav") || url.contains("/content/file") || url.contains("launchLink"))) {
+                        attachments.add(TeachingAttachment(title, url))
+                    } else {
+                        attachments.add(0, TeachingAttachment(title, TeachingURLs.origin + "/webapps/blackboard/execute/content/file?course_id=${course.id}&content_id=$id&mode=view"))
+                    }
+                }
             }
             if (!assignment && attachments.isEmpty() && url?.contains("bbcswebdav") == true) {
                 attachments.add(TeachingAttachment(title, url))

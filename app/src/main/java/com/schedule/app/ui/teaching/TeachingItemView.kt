@@ -1,4 +1,4 @@
-﻿package com.schedule.app.ui.teaching
+package com.schedule.app.ui.teaching
 
 import android.content.Intent
 import android.net.Uri
@@ -80,7 +80,14 @@ fun TeachingItemView(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = 96.dp)
+            )
+        },
         topBar = {
             TopAppBar(
                 title = { Text(item?.displayCourseTitle ?: "详情") },
@@ -108,7 +115,7 @@ fun TeachingItemView(
                     .padding(padding)
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Title and course
@@ -337,9 +344,13 @@ fun TeachingItemView(
                                                     scope.launch {
                                                         val res = TeachingDownloader.download(context, att.url, att.name)
                                                         if (res.isSuccess) {
-                                                            snackbarHostState.showSnackbar("「${att.name}」下载成功！已存至系统下载目录。")
+                                                            val msg = "「${att.name}」下载成功！已存至系统下载目录。"
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                            snackbarHostState.showSnackbar(msg)
                                                         } else {
-                                                            snackbarHostState.showSnackbar("下载失败: ${res.exceptionOrNull()?.message}")
+                                                            val msg = "下载失败: ${res.exceptionOrNull()?.message}"
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                            snackbarHostState.showSnackbar(msg)
                                                         }
                                                     }
                                                 },

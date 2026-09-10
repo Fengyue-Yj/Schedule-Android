@@ -37,6 +37,8 @@ import com.schedule.app.ui.insights.InsightsScreen
 import com.schedule.app.ui.schedule.HomeScreen
 import com.schedule.app.ui.tasks.TasksScreen
 import com.schedule.app.ui.theme.AppTheme
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -49,22 +51,66 @@ enum class BottomNavItem(val route: String, val title: String, val icon: ImageVe
 
 @Composable
 fun AppNavigation(database: AppDatabase) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("schedule_prefs", Context.MODE_PRIVATE) }
     val navController = rememberNavController()
     val allTerms by database.settingDao().getAll().collectAsState(initial = emptyList())
-    var activeTermId by remember { mutableStateOf<String?>(null) }
-    val coroutineScope = rememberCoroutineScope()
+    var activeTermId by remember { mutableStateOf(prefs.getString("active_term_id", null)) }
 
-    LaunchedEffect(allTerms) {
-        if (allTerms.isEmpty()) {
-            withContext(Dispatchers.IO) {
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val terms = database.settingDao().getAllList()
+            if (terms.isEmpty()) {
                 val newTerm = SettingEntity.defaultSetting()
                 database.settingDao().insert(newTerm)
                 withContext(Dispatchers.Main) {
                     activeTermId = newTerm.id
+                    prefs.edit().putString("active_term_id", newTerm.id).apply()
+                }
+            } else {
+                // Determine which term to activate
+                val savedId = prefs.getString("active_term_id", null)
+                val savedTerm = terms.firstOrNull { it.id == savedId }
+                
+                // Identify all terms that actually have courses
+                val termsWithCourses = terms.filter { term ->
+                    database.courseDao().getCoursesForTerm(term.id).isNotEmpty()
+                }
+
+                val targetTermId = if (termsWithCourses.isNotEmpty()) {
+                    if (savedTerm != null && termsWithCourses.any { it.id == savedTerm.id }) {
+                        savedTerm.id
+                    } else {
+                        // Priority: auto-recover the term with courses!
+                        termsWithCourses.first().id
+                    }
+                } else {
+                    savedTerm?.id ?: terms.first().id
+                }
+
+                // Clean up empty phantom default terms created by the previous bug
+                if (termsWithCourses.isNotEmpty()) {
+                    val emptyTerms = terms.filter { term ->
+                        database.courseDao().getCoursesForTerm(term.id).isEmpty()
+                    }
+                    for (empty in emptyTerms) {
+                        try {
+                            database.settingDao().delete(empty)
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    activeTermId = targetTermId
+                    prefs.edit().putString("active_term_id", targetTermId).apply()
                 }
             }
-        } else if (activeTermId == null || allTerms.none { it.id == activeTermId }) {
-            activeTermId = allTerms.first().id
+        }
+    }
+
+    LaunchedEffect(activeTermId) {
+        if (activeTermId != null) {
+            prefs.edit().putString("active_term_id", activeTermId).apply()
         }
     }
 

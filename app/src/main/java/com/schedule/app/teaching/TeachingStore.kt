@@ -100,7 +100,17 @@ class TeachingStore private constructor(private val context: Context) {
 
     private suspend fun fetchCourse(course: TeachingCourse): List<TeachingItem> {
         val courseHtml = session.get(TeachingURLs.course(course.id))
-        val result = TeachingParser.parseAnnouncements(courseHtml, course).toMutableList()
+        var announcements = TeachingParser.parseAnnouncements(courseHtml, course)
+        if (announcements.isEmpty()) {
+            val menuAnnounceUrl = TeachingParser.parseAnnouncementUrl(courseHtml, course.id)
+            if (menuAnnounceUrl != null && menuAnnounceUrl != TeachingURLs.course(course.id)) {
+                try {
+                    val announceHtml = session.get(menuAnnounceUrl)
+                    announcements = TeachingParser.parseAnnouncements(announceHtml, course)
+                } catch (_: Exception) {}
+            }
+        }
+        val result = announcements.toMutableList()
         val roots = TeachingParser.parseRoots(courseHtml)
         val queue = ArrayDeque(roots)
         val visited = mutableSetOf<String>()

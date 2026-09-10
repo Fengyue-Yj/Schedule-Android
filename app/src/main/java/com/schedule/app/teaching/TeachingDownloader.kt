@@ -52,11 +52,47 @@ object TeachingDownloader {
         val sanitized = sanitizeFileName(suggestedFileName)
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
         val file = File(dir, sanitized)
-        return if (file.exists() && file.length() > 0) file else null
+        if (file.exists() && file.length() > 0) {
+            // Check if file is actually a corrupt HTML error page from previous download
+            try {
+                if (file.length() < 20000) {
+                    val header = file.inputStream().use {
+                        val buf = ByteArray(minOf(file.length().toInt(), 4096))
+                        val read = it.read(buf)
+                        if (read > 0) String(buf, 0, read, StandardCharsets.UTF_8) else ""
+                    }
+                    if (header.contains("<html", ignoreCase = true) && 
+                        (header.contains("无访问权限") || header.contains("没有权限") || header.contains("拒绝访问") || header.contains("loginForm") || header.contains("iaaa.pku.edu.cn"))
+                    ) {
+                        file.delete()
+                        return null
+                    }
+                }
+            } catch (_: Exception) {}
+            return file
+        }
+        return null
     }
 
     fun isDownloaded(context: Context, suggestedFileName: String): Boolean {
         return getDownloadedFile(context, suggestedFileName) != null
+    }
+
+    private fun mergeCookies(vararg cookieStrings: String): String {
+        val map = mutableMapOf<String, String>()
+        for (str in cookieStrings) {
+            str.split(";").forEach { part ->
+                val trimmed = part.trim()
+                if (trimmed.contains("=")) {
+                    val k = trimmed.substringBefore("=").trim()
+                    val v = trimmed.substringAfter("=").trim()
+                    if (k.isNotEmpty() && v.isNotEmpty()) {
+                        map[k] = v
+                    }
+                }
+            }
+        }
+        return map.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 
     /**
@@ -70,9 +106,10 @@ object TeachingDownloader {
         updateStatus(url, DownloadStatus.Downloading(0f, 0L, -1L))
         try {
             var currentUrl = url
+            var previousUrl = "https://course.pku.edu.cn/"
             var connection: HttpURLConnection? = null
             var redirectCount = 0
-            val maxRedirects = 6
+            val maxRedirects = 8
 
             val cookieManager = CookieManager.getInstance()
 
@@ -91,16 +128,15 @@ object TeachingDownloader {
                     "User-Agent",
                     "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Schedule/1.0"
                 )
-                connection.setRequestProperty("Referer", "https://course.pku.edu.cn/")
+                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                connection.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.5")
+                connection.setRequestProperty("Referer", previousUrl)
 
-                // Inject PKU cookies
+                // Inject all PKU cookies with deduplicated merge
                 val specificCookies = cookieManager.getCookie(currentUrl) ?: ""
                 val originCookies = cookieManager.getCookie(TeachingURLs.origin) ?: ""
-                val allCookies = if (specificCookies.isNotBlank() && originCookies.isNotBlank() && specificCookies != originCookies) {
-                    "$originCookies; $specificCookies"
-                } else {
-                    specificCookies.ifBlank { originCookies }
-                }
+                val webappsCookies = cookieManager.getCookie("${TeachingURLs.origin}/webapps") ?: ""
+                val allCookies = mergeCookies(originCookies, webappsCookies, specificCookies)
                 if (allCookies.isNotEmpty()) {
                     connection.setRequestProperty("Cookie", allCookies)
                 }
@@ -121,6 +157,7 @@ object TeachingDownloader {
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location")
                     if (location != null) {
+                        previousUrl = currentUrl
                         currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
                             location
                         } else {
@@ -166,12 +203,27 @@ object TeachingDownloader {
                     while (input.read(buffer).also { bytes = it } != -1) {
                         if (firstChunk) {
                             firstChunk = false
-                            if (contentType?.contains("text/html") == true) {
-                                val sample = String(buffer, 0, minOf(bytes, 2048), StandardCharsets.UTF_8)
-                                if (sample.contains("id=\"loginForm\"") || sample.contains("name=\"password\"") || sample.contains("iaaa.pku.edu.cn")) {
-                                    updateStatus(url, DownloadStatus.Error("登录已过期，请重新登录教学网"))
-                                    return@withContext Result.failure(TeachingError.LoginRequired)
-                                }
+                            val sample = String(buffer, 0, minOf(bytes, 4096), StandardCharsets.UTF_8)
+                            if (sample.contains("id=\"loginForm\"") || sample.contains("name=\"password\"") || sample.contains("iaaa.pku.edu.cn")) {
+                                targetFile.delete()
+                                updateStatus(url, DownloadStatus.Error("登录已过期，请重新登录教学网"))
+                                return@withContext Result.failure(TeachingError.LoginRequired)
+                            }
+                            if (sample.contains("无访问权限") || sample.contains("没有权限") || sample.contains("拒绝访问") || sample.contains("Access Denied") || sample.contains("receiptBad")) {
+                                targetFile.delete()
+                                val errorMsg = "教学网提示无访问权限，请在网页确认资料权限"
+                                updateStatus(url, DownloadStatus.Error(errorMsg))
+                                return@withContext Result.failure(Exception(errorMsg))
+                            }
+                            val expectedDoc = suggestedFileName?.let { name ->
+                                val ext = name.substringAfterLast('.', "").lowercase()
+                                ext in listOf("pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "zip", "rar", "7z", "mp4", "mp3")
+                            } ?: false
+                            if (expectedDoc && sample.contains("<html", ignoreCase = true)) {
+                                targetFile.delete()
+                                val errorMsg = "教学网返回了HTML网页而非课件文件，可能暂无下载权限"
+                                updateStatus(url, DownloadStatus.Error(errorMsg))
+                                return@withContext Result.failure(Exception(errorMsg))
                             }
                         }
 

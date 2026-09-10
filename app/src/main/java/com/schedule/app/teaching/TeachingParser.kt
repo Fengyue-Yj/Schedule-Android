@@ -93,19 +93,37 @@ object TeachingParser {
         return result
     }
 
+    fun parseRoots(html: String): List<String> {
+        if (isLogin(html)) throw TeachingError.LoginRequired
+        val doc = Jsoup.parse(html)
+        val links = doc.select("#courseMenuPalette_contents > li > a")
+        val roots = mutableSetOf<String>()
+        for (link in links) {
+            val href = link.attr("href")
+            val url = TeachingURLs.resolve(href) ?: continue
+            if (url.contains("listContent.jsp")) {
+                val contentId = Regex("""content_id=([0-9_]+)""").find(url)?.groupValues?.get(1)
+                if (!contentId.isNullOrEmpty()) {
+                    roots.add(contentId)
+                }
+            }
+        }
+        return roots.toList().sorted()
+    }
+
     fun parseAssignments(html: String, course: TeachingCourse): List<TeachingItem> {
-        // Simple adaptation, similar to contents but filtering for assignments
-        return parseContents(html, course).filter { it.kind == TeachingKind.ASSIGNMENT }
+        return parseContents(html, course).items.filter { it.kind == TeachingKind.ASSIGNMENT }
     }
 
     fun parseMaterials(html: String, course: TeachingCourse): List<TeachingItem> {
-        return parseContents(html, course).filter { it.kind == TeachingKind.MATERIAL }
+        return parseContents(html, course).items.filter { it.kind == TeachingKind.MATERIAL }
     }
 
-    private fun parseContents(html: String, course: TeachingCourse): List<TeachingItem> {
+    fun parseContents(html: String, course: TeachingCourse): ContentPage {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
-        val result = mutableListOf<TeachingItem>()
+        val items = mutableListOf<TeachingItem>()
+        val folders = mutableListOf<String>()
         
         for (row in doc.select("#content_listContainer > li")) {
             val children = row.children()
@@ -118,13 +136,18 @@ object TeachingParser {
             val url = titleLink?.attr("href")?.let { TeachingURLs.resolve(it) }
             val headerID = titleElement.id()
             val rowID = row.id()
-            var id = url?.substringAfter("content_id=")?.substringBefore("&") ?: (if (headerID.isEmpty()) rowID else headerID)
+            val id = url?.let { Regex("""content_id=([0-9_]+)""").find(it)?.groupValues?.get(1) }
+                ?: (if (headerID.isNotEmpty()) headerID else rowID)
             if (id.isEmpty() || title.isEmpty()) continue
             
-            val isFolder = alt.contains("文件夹") || alt.contains("folder") || url?.contains("listContent.jsp") == true
-            if (isFolder) continue
+            val isFolder = alt.contains("文件夹") || alt.contains("folder") || (url != null && url.contains("listContent.jsp"))
+            if (isFolder) {
+                val folderId = url?.let { Regex("""content_id=([0-9_]+)""").find(it)?.groupValues?.get(1) } ?: id
+                folders.add(folderId)
+                continue
+            }
             
-            val assignment = alt.contains("作业") || alt.contains("assignment") || url?.contains("uploadAssignment") == true
+            val assignment = alt.contains("作业") || alt.contains("assignment") || (url != null && url.contains("uploadAssignment"))
             val detail = if (children.size > 2) children[2] else row
             val body = detail.select(".vtbegenerated").text()
             val attachments = parseAttachments(detail).toMutableList()
@@ -135,7 +158,7 @@ object TeachingParser {
                 attachments.add(TeachingAttachment(title, url))
             }
             
-            result.add(
+            items.add(
                 TeachingItem(
                     id = "${course.id}:$id",
                     courseID = course.id,
@@ -149,7 +172,15 @@ object TeachingParser {
                 )
             )
         }
-        return result
+        return ContentPage(items = items, folders = folders)
+    }
+
+    fun parseDeadline(html: String): Pair<Long?, String?> {
+        if (isLogin(html)) throw TeachingError.LoginRequired
+        val doc = Jsoup.parse(html)
+        val text = doc.select("#assignMeta2 + div").firstOrNull()?.text()?.trim()
+        val date = text?.let { parseDate(it)?.time }
+        return Pair(date, text)
     }
 
     private fun parseAttachments(element: Element): List<TeachingAttachment> {
@@ -168,7 +199,36 @@ object TeachingParser {
 
     fun parseDate(text: String): Date? {
         val normalized = text.replace("\u00a0", " ").trim()
-        val formats = listOf("yyyy-MM-dd HH:mm", "yyyy/MM/dd HH:mm", "yyyy-MM-dd", "yyyy/MM/dd")
+        // Chinese pattern: 2024年10月15日 星期二 下午 23:59 or 2024年10月15日 下午11:59
+        val chineseRegex = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日\s*(?:星期\S\s*)?(上午|下午)?\s*(\d{1,2}):(\d{2})""")
+        val match = chineseRegex.find(normalized)
+        if (match != null) {
+            try {
+                val year = match.groupValues[1].toInt()
+                val month = match.groupValues[2].toInt()
+                val day = match.groupValues[3].toInt()
+                val ampm = match.groupValues[4]
+                var hour = match.groupValues[5].toInt()
+                val minute = match.groupValues[6].toInt()
+                if (ampm == "下午" && hour < 12) hour += 12
+                if (ampm == "上午" && hour == 12) hour = 0
+                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+                cal.set(year, month - 1, day, hour, minute, 0)
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                return cal.time
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+        val formats = listOf(
+            "yyyy-MM-dd HH:mm",
+            "yyyy/MM/dd HH:mm",
+            "yyyy-MM-dd",
+            "yyyy/MM/dd",
+            "EEEE, MMMM d, yyyy h:mm a",
+            "MMMM d, yyyy h:mm a",
+            "MMM d, yyyy h:mm a"
+        )
         for (format in formats) {
             val sdf = SimpleDateFormat(format, Locale.US)
             sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")

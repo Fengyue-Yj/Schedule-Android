@@ -6,7 +6,9 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -69,7 +71,7 @@ fun HomeScreen(
                     )
                     HeaderActionButton(
                         title = "Settings",
-                        icon = Icons.Default.Settings,
+                        icon = Icons.Default.Tune,
                         onClick = { showSettingsSheet = true }
                     )
                 }
@@ -81,7 +83,10 @@ fun HomeScreen(
             ) { page ->
                 val week = page + 1
                 Column(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = 80.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     WeekDateHeaderRow(week = week, setting = term)

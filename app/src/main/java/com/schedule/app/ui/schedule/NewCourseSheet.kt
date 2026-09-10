@@ -46,10 +46,10 @@ fun NewCourseSheet(
     var name by remember { mutableStateOf("") }
     var teacher by remember { mutableStateOf("") }
     var classroom by remember { mutableStateOf("") }
-    var courseColorHex by remember { mutableStateOf("#FF5722") }
+    var courseColorHex by remember { mutableStateOf("") }
     var meetingDrafts by remember { mutableStateOf(listOf(MeetingDraft())) }
 
-    val presetColors = listOf("#FF5722", "#4CAF50", "#2196F3", "#9C27B0", "#FFEB3B", "#795548")
+    val presetColors = listOf("", "#DBF5E6", "#CCEBD8", "#E6FAF0", "#C7E6CC", "#EBF5E0", "#D6F0EB")
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -143,15 +143,44 @@ fun NewCourseSheet(
             }
 
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                presetColors.forEach { hex ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Auto (Palette) option
+                Box(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .background(
+                            color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                        .border(
+                            width = if (courseColorHex.isEmpty()) 2.dp else 0.5.dp,
+                            color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                        .clickable { courseColorHex = "" }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "自动(柔和绿)",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (courseColorHex.isEmpty()) FontWeight.Bold else FontWeight.Normal,
+                        color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                presetColors.filter { it.isNotEmpty() }.forEach { hex ->
                     Box(
                         modifier = Modifier
                             .size(36.dp)
                             .background(Color(android.graphics.Color.parseColor(hex)), RoundedCornerShape(18.dp))
                             .border(
-                                width = if (courseColorHex == hex) 3.dp else 0.dp,
-                                color = if (courseColorHex == hex) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                width = if (courseColorHex == hex) 3.dp else 1.dp,
+                                color = if (courseColorHex == hex) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.12f),
                                 shape = RoundedCornerShape(18.dp)
                             )
                             .clickable { courseColorHex = hex }

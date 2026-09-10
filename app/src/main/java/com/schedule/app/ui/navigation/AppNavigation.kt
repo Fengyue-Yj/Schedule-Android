@@ -38,32 +38,32 @@ enum class BottomNavItem(val route: String, val title: String, val icon: ImageVe
 @Composable
 fun AppNavigation(database: AppDatabase) {
     val navController = rememberNavController()
-    var activeTerm by remember { mutableStateOf<SettingEntity?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
+    val allTerms by database.settingDao().getAll().collectAsState(initial = emptyList())
+    var activeTermId by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            val terms = database.settingDao().getAll().firstOrNull()
-            val term = terms?.firstOrNull()
-            if (term == null) {
+    LaunchedEffect(allTerms) {
+        if (allTerms.isEmpty()) {
+            withContext(Dispatchers.IO) {
                 val newTerm = SettingEntity.defaultSetting()
                 database.settingDao().insert(newTerm)
-                activeTerm = newTerm
-            } else {
-                activeTerm = term
+                withContext(Dispatchers.Main) {
+                    activeTermId = newTerm.id
+                }
             }
-            isLoading = false
+        } else if (activeTermId == null || allTerms.none { it.id == activeTermId }) {
+            activeTermId = allTerms.first().id
         }
     }
 
-    if (isLoading) {
+    val term = allTerms.firstOrNull { it.id == activeTermId } ?: allTerms.firstOrNull()
+
+    if (term == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
-
-    val term = activeTerm ?: return
 
     Scaffold(
         bottomBar = {
@@ -107,7 +107,7 @@ fun AppNavigation(database: AppDatabase) {
                 HomeScreen(
                     term = term,
                     database = database,
-                    onTermChanged = { newTerm -> activeTerm = newTerm }
+                    onTermChanged = { newTerm -> activeTermId = newTerm.id }
                 )
             }
             composable(BottomNavItem.Calendar.route) {

@@ -60,21 +60,29 @@ class TeachingStore private constructor(private val context: Context) {
         _message.value = "Fetching courses..."
         try {
             val homeHtml = session.get(TeachingURLs.home)
-            val courses = TeachingParser.parseCourses(homeHtml)
-            val items = mutableListOf<TeachingItem>()
+            val courses = TeachingParser.parseCourses(homeHtml).filter { it.isCurrent }
+            val chosen = courses
+            val replacement = _snapshot.value.items.toMutableList()
+            var successfulCourses = 0
             
-            for (course in courses) {
-                _message.value = "Fetching ${course.displayTitle}..."
-                val courseHtml = session.get(TeachingURLs.course(course.id))
-                items.addAll(TeachingParser.parseAnnouncements(courseHtml, course))
-                items.addAll(TeachingParser.parseAssignments(courseHtml, course))
-                items.addAll(TeachingParser.parseMaterials(courseHtml, course))
+            for ((index, course) in chosen.withIndex()) {
+                _message.value = "${index + 1}/${chosen.size} · ${course.displayTitle}"
+                try {
+                    val items = fetchCourse(course)
+                    replacement.removeAll { it.courseID == course.id }
+                    replacement.addAll(items)
+                    successfulCourses++
+                } catch (e: Exception) {
+                    if (e is TeachingError.LoginRequired) throw e
+                    e.printStackTrace()
+                }
             }
             
+            val allowedCourseIds = courses.map { it.id }.toSet()
             val newSnap = _snapshot.value.copy(
                 courses = courses,
-                items = items,
-                fetchedAt = System.currentTimeMillis()
+                items = replacement.filter { allowedCourseIds.contains(it.courseID) },
+                fetchedAt = if (successfulCourses > 0 || chosen.isEmpty()) System.currentTimeMillis() else _snapshot.value.fetchedAt
             )
             saveSnapshot(newSnap)
             _isSignedIn.value = true
@@ -87,6 +95,45 @@ class TeachingStore private constructor(private val context: Context) {
             _isRefreshing.value = false
             _message.value = null
         }
+    }
+
+    private suspend fun fetchCourse(course: TeachingCourse): List<TeachingItem> {
+        val courseHtml = session.get(TeachingURLs.course(course.id))
+        val result = TeachingParser.parseAnnouncements(courseHtml, course).toMutableList()
+        val roots = TeachingParser.parseRoots(courseHtml)
+        val queue = ArrayDeque(roots)
+        val visited = mutableSetOf<String>()
+        val seenItemIds = result.map { it.id }.toMutableSet()
+
+        while (queue.isNotEmpty()) {
+            val id = queue.removeFirst()
+            if (!visited.add(id)) continue
+            if (visited.size > 150) break
+
+            val contentHtml = session.get(TeachingURLs.content(course.id, id))
+            val page = TeachingParser.parseContents(contentHtml, course)
+            for (f in page.folders) {
+                if (!visited.contains(f)) {
+                    queue.add(f)
+                }
+            }
+            for (item in page.items) {
+                if (seenItemIds.add(item.id)) {
+                    var finalItem = item
+                    if (item.kind == TeachingKind.ASSIGNMENT) {
+                        try {
+                            val assignHtml = session.get(TeachingURLs.assignment(course.id, item.contentID))
+                            val (dueDate, raw) = TeachingParser.parseDeadline(assignHtml)
+                            finalItem = finalItem.copy(dueDate = dueDate, dueDateText = raw)
+                        } catch (e: Exception) {
+                            // ignore deadline fetch error
+                        }
+                    }
+                    result.add(finalItem)
+                }
+            }
+        }
+        return result
     }
 
     suspend fun refreshIfNeeded() {

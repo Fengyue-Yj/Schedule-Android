@@ -37,22 +37,22 @@ object ColorUtil {
         return (hash.absoluteValue % count)
     }
 
-    private val lightPalette = listOf(
-        Color(0xFF34C759),
-        Color(0xFF30B0C7),
-        Color(0xFF32ADE6),
-        Color(0xFF007AFF),
-        Color(0xFF5856D6),
-        Color(0xFFAF52DE)
+    val lightPalette = listOf(
+        Color(0xFFDBF5E6),
+        Color(0xFFCCEBD8),
+        Color(0xFFE6FAF0),
+        Color(0xFFC7E6CC),
+        Color(0xFFEBF5E0),
+        Color(0xFFD6F0EB)
     )
 
-    private val darkPalette = listOf(
-        Color(0xFF30D158),
-        Color(0xFF64D2FF),
-        Color(0xFF0A84FF),
-        Color(0xFF5E5CE6),
-        Color(0xFFBF5AF2),
-        Color(0xFFFF375F)
+    val darkPalette = listOf(
+        Color(0xFF1A3D2E),
+        Color(0xFF1F4733),
+        Color(0xFF143829),
+        Color(0xFF244D38),
+        Color(0xFF173326),
+        Color(0xFF214230)
     )
 
     fun displayColor(colorHex: String?, colorSeed: Int, id: String, isDark: Boolean): Color {

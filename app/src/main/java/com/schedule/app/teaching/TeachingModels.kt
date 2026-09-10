@@ -23,6 +23,11 @@ data class TeachingAttachment(
     val url: String
 )
 
+data class ContentPage(
+    val items: List<TeachingItem> = emptyList(),
+    val folders: List<String> = emptyList()
+)
+
 data class TeachingItem(
     val id: String,
     val courseID: String,
@@ -41,6 +46,9 @@ data class TeachingItem(
 ) {
     val displayCourseTitle: String
         get() = courseTitle.replace(Regex("\\(.*?\\)"), "").trim()
+
+    val itemReadKey: String
+        get() = if (readKey.isNotEmpty()) readKey else "$id:${publishedText ?: ""}:${body.take(120).hashCode()}"
 }
 
 data class TeachingSnapshot(

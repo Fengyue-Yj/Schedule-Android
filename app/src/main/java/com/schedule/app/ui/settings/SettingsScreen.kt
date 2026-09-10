@@ -8,7 +8,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +50,9 @@ fun SettingsScreen(
 
     var currentDraft by remember(term) { mutableStateOf(TermDraft(term)) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showManageSemestersDialog by remember { mutableStateOf(false) }
+    var termToEdit by remember { mutableStateOf<SettingEntity?>(null) }
+    var termToDelete by remember { mutableStateOf<SettingEntity?>(null) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showTeachingHub by remember { mutableStateOf(false) }
     var importResult by remember { mutableStateOf<ImportSummary?>(null) }
@@ -161,6 +167,21 @@ fun SettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Create Semester")
                     }
+
+                    OutlinedButton(
+                        onClick = { showManageSemestersDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.List, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Manage Semesters")
+                    }
+
+                    Text(
+                        text = "Courses, assignments, exams and settings are saved separately for each semester. Switching semesters discards unsaved settings below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -320,7 +341,7 @@ fun SettingsScreen(
                             coroutineScope.launch(Dispatchers.IO) {
                                 val courses = database.courseDao().getCoursesForTerm(term.id)
                                 courses.forEach { course ->
-                                    database.courseDao().update(course.copy(colorSeed = (1..1000000).random()))
+                                    database.courseDao().update(course.copy(colorHex = "", colorSeed = (1..1000000).random()))
                                 }
                                 statusMessage = "Randomized colors for ${courses.size} courses."
                             }
@@ -406,6 +427,212 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Manage Semesters Dialog
+    if (showManageSemestersDialog) {
+        AlertDialog(
+            onDismissRequest = { showManageSemestersDialog = false },
+            title = { Text("Semesters") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    allTerms.forEach { item ->
+                        var menuExpanded by remember { mutableStateOf(false) }
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                            color = if (item.id == term.id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(item.displayName, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "${dateFormat.format(item.termStartDate)} · ${item.totalWeeks} weeks",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (item.id == term.id) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Current",
+                                        tint = AppTheme.colors.accent,
+                                        modifier = Modifier.size(20.dp).padding(end = 4.dp)
+                                    )
+                                }
+                                Box {
+                                    IconButton(onClick = { menuExpanded = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuExpanded,
+                                        onDismissRequest = { menuExpanded = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Load Semester") },
+                                            onClick = {
+                                                menuExpanded = false
+                                                onTermChanged(item)
+                                                showManageSemestersDialog = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Edit Semester") },
+                                            onClick = {
+                                                menuExpanded = false
+                                                termToEdit = item
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Delete Semester", color = if (allTerms.size > 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline) },
+                                            enabled = allTerms.size > 1,
+                                            onClick = {
+                                                menuExpanded = false
+                                                termToDelete = item
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            showManageSemestersDialog = false
+                            showCreateDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Create Semester")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showManageSemestersDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Delete Semester Dialog
+    termToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { termToDelete = null },
+            title = { Text("Delete Semester?") },
+            text = { Text("Delete ${target.displayName} and its courses, assignments, exams and semester plans? This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val isDeletingCurrent = target.id == term.id
+                        val replacement = allTerms.firstOrNull { it.id != target.id }
+                        coroutineScope.launch(Dispatchers.IO) {
+                            database.courseDao().deleteByTermId(target.id)
+                            database.assignmentDao().deleteByTermId(target.id)
+                            database.examDao().deleteByTermId(target.id)
+                            database.flexiblePlanDao().deleteByTermId(target.id)
+                            database.settingDao().delete(target)
+                            withContext(Dispatchers.Main) {
+                                if (isDeletingCurrent && replacement != null) {
+                                    onTermChanged(replacement)
+                                }
+                                termToDelete = null
+                            }
+                        }
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { termToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Edit Semester Dialog
+    termToEdit?.let { target ->
+        var editName by remember(target) { mutableStateOf(target.name) }
+        var editWeeks by remember(target) { mutableIntStateOf(target.totalWeeks) }
+        var editSeason by remember(target) { mutableStateOf(try { TermSeason.valueOf(target.termSeason) } catch(e: Exception) { TermSeason.FALL }) }
+        var editStartDate by remember(target) { mutableLongStateOf(target.termStartDate) }
+
+        AlertDialog(
+            onDismissRequest = { termToEdit = null },
+            title = { Text("Edit Semester") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Semester Name") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Total Weeks: $editWeeks")
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilledTonalButton(onClick = { if (editWeeks > 1) editWeeks-- }) { Text("-") }
+                            FilledTonalButton(onClick = { if (editWeeks < 30) editWeeks++ }) { Text("+") }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TermSeason.entries.forEach { s ->
+                            FilterChip(
+                                selected = editSeason == s,
+                                onClick = { editSeason = s },
+                                label = { Text(s.displayName) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val updated = target.copy(
+                                name = editName.trim(),
+                                totalWeeks = editWeeks,
+                                termSeason = editSeason.name,
+                                termStartDate = editStartDate
+                            )
+                            database.settingDao().update(updated)
+                            withContext(Dispatchers.Main) {
+                                if (target.id == term.id) {
+                                    currentDraft = TermDraft(updated)
+                                    onTermChanged(updated)
+                                }
+                                termToEdit = null
+                            }
+                        }
+                    },
+                    enabled = editName.trim().isNotEmpty()
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { termToEdit = null }) { Text("Cancel") }
             }
         )
     }

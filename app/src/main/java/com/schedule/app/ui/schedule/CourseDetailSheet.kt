@@ -52,7 +52,7 @@ fun CourseDetailSheet(
         )
     }
 
-    val presetColors = listOf("#3D9169", "#C7EACF", "#5856D6", "#32ADE6", "#FF9500", "#FF2D55")
+    val presetColors = listOf("", "#DBF5E6", "#CCEBD8", "#E6FAF0", "#C7E6CC", "#EBF5E0", "#D6F0EB")
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -219,16 +219,44 @@ fun CourseDetailSheet(
 
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
             if (isEditing) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    presetColors.forEach { hex ->
-                        val color = try { Color(android.graphics.Color.parseColor(hex)) } catch (e: Exception) { Color.Green }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .height(36.dp)
+                            .background(
+                                color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                            .border(
+                                width = if (courseColorHex.isEmpty()) 2.dp else 0.5.dp,
+                                color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                            .clickable { courseColorHex = "" }
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "自动(柔和绿)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = if (courseColorHex.isEmpty()) FontWeight.Bold else FontWeight.Normal,
+                            color = if (courseColorHex.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    presetColors.filter { it.isNotEmpty() }.forEach { hex ->
+                        val color = try { Color(android.graphics.Color.parseColor(hex)) } catch (e: Exception) { Color(0xFFDBF5E6) }
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
                                 .background(color, RoundedCornerShape(18.dp))
                                 .border(
-                                    width = if (courseColorHex == hex) 3.dp else 0.dp,
-                                    color = if (courseColorHex == hex) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                    width = if (courseColorHex == hex) 3.dp else 1.dp,
+                                    color = if (courseColorHex == hex) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.12f),
                                     shape = RoundedCornerShape(18.dp)
                                 )
                                 .clickable { courseColorHex = hex }

@@ -1,11 +1,14 @@
-﻿package com.schedule.app.ui.teaching
+package com.schedule.app.ui.teaching
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.schedule.app.ui.theme.AppTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
@@ -55,6 +58,7 @@ fun TeachingHubScreen(
     var selectedKind by remember { mutableStateOf(TeachingKind.ASSIGNMENT) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var isBatchImporting by remember { mutableStateOf(false) }
+    var courseFilter by remember { mutableStateOf("") }
 
     // Collect courses and imported assignments
     val courses by remember(term, database) {
@@ -139,7 +143,65 @@ fun TeachingHubScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            val filteredItems = snapshot.items.filter { it.kind == selectedKind }
+            if (snapshot.courses.isNotEmpty()) {
+                var filterExpanded by remember { mutableStateOf(false) }
+                val selectedCourseTitle = snapshot.courses.firstOrNull { it.id == courseFilter }?.displayTitle ?: "全部课程"
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { filterExpanded = true }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "课程筛选: $selectedCourseTitle",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "切换 ▾",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = filterExpanded,
+                            onDismissRequest = { filterExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("全部课程") },
+                                onClick = {
+                                    courseFilter = ""
+                                    filterExpanded = false
+                                }
+                            )
+                            snapshot.courses.forEach { c ->
+                                DropdownMenuItem(
+                                    text = { Text(c.displayTitle) },
+                                    onClick = {
+                                        courseFilter = c.id
+                                        filterExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            val filteredItems = snapshot.items.filter { 
+                it.kind == selectedKind && (courseFilter.isEmpty() || it.courseID == courseFilter)
+            }
 
             if (filteredItems.isEmpty()) {
                 Box(
@@ -304,10 +366,13 @@ fun TeachingHubScreen(
                                 )
                             }
                             TeachingKind.ANNOUNCEMENT -> {
+                                val isUnread = !snapshot.readKeys.contains(item.id) && !snapshot.readKeys.contains(item.itemReadKey)
                                 AnnouncementCard(
                                     item = item,
+                                    isUnread = isUnread,
                                     onOpenDetail = {
                                         store.markRead(item.id)
+                                        store.markRead(item.itemReadKey)
                                         selectedItemId = item.id
                                     }
                                 )
@@ -550,6 +615,7 @@ private fun MaterialCard(
 @Composable
 private fun AnnouncementCard(
     item: TeachingItem,
+    isUnread: Boolean,
     onOpenDetail: () -> Unit
 ) {
     Card(
@@ -560,11 +626,24 @@ private fun AnnouncementCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isUnread) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(AppTheme.colors.accent, CircleShape)
+                    )
+                }
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = item.displayCourseTitle,
                 style = MaterialTheme.typography.bodySmall,

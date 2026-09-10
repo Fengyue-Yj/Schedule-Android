@@ -146,14 +146,19 @@ fun TeachingHubScreen(
                     }
                 },
                 actions = {
-                    IconButton(
+                    FilledTonalButton(
                         onClick = { scope.launch { store.refresh() } },
-                        enabled = !isRefreshing
+                        enabled = !isRefreshing,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (isRefreshing) "同步中" else "同步", style = MaterialTheme.typography.labelSmall)
                     }
+                    Spacer(Modifier.width(4.dp))
                     TextButton(onClick = { store.signOut() }) {
-                        Text("退出登录")
+                        Text("退出")
                     }
                 }
             )
@@ -243,35 +248,29 @@ fun TeachingHubScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(32.dp),
+                        .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
                             text = "暂无${when(selectedKind) {
                                 TeachingKind.ANNOUNCEMENT -> "通知"
                                 TeachingKind.ASSIGNMENT -> "作业"
-                                TeachingKind.MATERIAL -> "资料"
-                            }}数据",
+                                TeachingKind.MATERIAL -> "资料课件"
+                            }}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = "可点击右上角刷新按钮或下方按钮从教学网重新同步",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Button(
                             onClick = { scope.launch { store.refresh() } },
                             enabled = !isRefreshing
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isRefreshing) "正在同步中..." else "从教学网同步最新数据")
+                            Text(if (isRefreshing) "正在同步..." else "从教学网同步最新数据")
                         }
                     }
                 }
@@ -281,166 +280,168 @@ fun TeachingHubScreen(
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Top Card for Assignment Tab: One-Click Batch Import
+                    // Compact Action Bar for Assignment Tab
                     if (selectedKind == TeachingKind.ASSIGNMENT && term != null && database != null) {
                         item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                ),
-                                shape = RoundedCornerShape(14.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.CloudDownload,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            "⚡ 一键导入全部作业",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    val currentImportedCount = filteredItems.count { importedSet.contains(it.id) }
-                                    Text(
-                                        "当前学期：${term.displayName} · 共 ${filteredItems.size} 项作业 (已导入 $currentImportedCount 项)\n系统将自动清洗课名并匹配本地课表课程。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    Button(
-                                        onClick = {
-                                            if (!isBatchImporting) {
-                                                isBatchImporting = true
-                                                scope.launch {
-                                                    try {
-                                                        val count = TeachingImporter.importAll(
-                                                            items = filteredItems,
-                                                            term = term,
-                                                            courses = courses,
-                                                            database = database
-                                                        )
-                                                        snackbarHostState.showSnackbar("成功将 $count 项作业导入至「${term.displayName}」待办列表！")
-                                                    } catch (e: Exception) {
-                                                        snackbarHostState.showSnackbar("导入失败: ${e.localizedMessage}")
-                                                    } finally {
-                                                        isBatchImporting = false
-                                                    }
+                                Button(
+                                    onClick = {
+                                        if (!isBatchImporting) {
+                                            isBatchImporting = true
+                                            scope.launch {
+                                                try {
+                                                    val count = TeachingImporter.importAll(
+                                                        items = filteredItems,
+                                                        term = term,
+                                                        courses = courses,
+                                                        database = database
+                                                    )
+                                                    val msg = "已成功导入 $count 项作业至待办列表"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    snackbarHostState.showSnackbar(msg)
+                                                } catch (e: Exception) {
+                                                    val msg = "导入失败: ${e.localizedMessage}"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    snackbarHostState.showSnackbar(msg)
+                                                } finally {
+                                                    isBatchImporting = false
                                                 }
                                             }
-                                        },
-                                        enabled = !isBatchImporting,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        if (isBatchImporting) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(18.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.onPrimary
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("正在智能匹配导入中...")
-                                        } else {
-                                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("一键导入全部作业到课表待办")
                                         }
+                                    },
+                                    enabled = !isBatchImporting,
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    if (isBatchImporting) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("导入中...", style = MaterialTheme.typography.labelMedium)
+                                    } else {
+                                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("一键导入全部作业", style = MaterialTheme.typography.labelMedium)
                                     }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { scope.launch { store.refresh() } },
+                                    enabled = !isRefreshing,
+                                    modifier = Modifier.height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (isRefreshing) "同步中" else "同步作业", style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                         }
                     }
 
-                    // Top Card for Material Tab: One-Click Batch Download
+                    // Compact Action Bar for Material Tab
                     if (selectedKind == TeachingKind.MATERIAL && filteredItems.any { it.attachments.isNotEmpty() }) {
                         val allAttachments = filteredItems.flatMap { item -> item.attachments.map { att -> Pair(att, item) } }
-                        val downloadedCount = allAttachments.count { (att, _) -> TeachingDownloader.isDownloaded(context, att.name) }
                         item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                                ),
-                                shape = RoundedCornerShape(14.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Download,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            "📥 一键下载全部资料课件",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    Text(
-                                        "共发现 ${allAttachments.size} 个资料课件附件 (已下载 $downloadedCount 个)\n点击即可一键保存至手机「Download/Schedule」目录，并可在下方直接打开查看。",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    Button(
-                                        onClick = {
-                                            if (!isBatchDownloading) {
-                                                isBatchDownloading = true
-                                                scope.launch {
-                                                    try {
-                                                        var succ = 0
-                                                        var fail = 0
-                                                        for ((att, _) in allAttachments) {
-                                                            if (!TeachingDownloader.isDownloaded(context, att.name)) {
-                                                                val res = TeachingDownloader.download(context, att.url, att.name)
-                                                                if (res.isSuccess) succ++ else fail++
-                                                            }
+                                Button(
+                                    onClick = {
+                                        if (!isBatchDownloading) {
+                                            isBatchDownloading = true
+                                            scope.launch {
+                                                try {
+                                                    var succ = 0
+                                                    var fail = 0
+                                                    for ((att, sourceItem) in allAttachments) {
+                                                        if (!TeachingDownloader.isDownloaded(context, att.name)) {
+                                                            val res = TeachingDownloader.download(
+                                                                context = context,
+                                                                url = att.url,
+                                                                suggestedFileName = att.name,
+                                                                referer = sourceItem.sourceURL
+                                                            )
+                                                            if (res.isSuccess) succ++ else fail++
                                                         }
-                                                        snackbarHostState.showSnackbar("批量下载完成: 已就绪 $succ 个附件${if (fail > 0) "，失败 $fail 个" else ""}")
-                                                    } catch (e: Exception) {
-                                                        snackbarHostState.showSnackbar("批量下载出错: ${e.localizedMessage}")
-                                                    } finally {
-                                                        isBatchDownloading = false
                                                     }
+                                                    val msg = "批量下载完成: 成功 $succ 个${if (fail > 0) "，失败 $fail 个" else ""}"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    snackbarHostState.showSnackbar(msg)
+                                                } catch (e: Exception) {
+                                                    val msg = "批量下载出错: ${e.localizedMessage}"
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    snackbarHostState.showSnackbar(msg)
+                                                } finally {
+                                                    isBatchDownloading = false
                                                 }
                                             }
-                                        },
-                                        enabled = !isBatchDownloading,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        if (isBatchDownloading) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(18.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.onPrimary
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("正在批量下载资料课件中...")
-                                        } else {
-                                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("一键下载当前全部附件 (${allAttachments.size})")
                                         }
+                                    },
+                                    enabled = !isBatchDownloading,
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    if (isBatchDownloading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("下载中...", style = MaterialTheme.typography.labelMedium)
+                                    } else {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("一键下载全部资料 (${allAttachments.size})", style = MaterialTheme.typography.labelMedium)
                                     }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { scope.launch { store.refresh() } },
+                                    enabled = !isRefreshing,
+                                    modifier = Modifier.height(42.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (isRefreshing) "同步中" else "同步资料", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+
+                    // Compact Action Bar for Announcement Tab
+                    if (selectedKind == TeachingKind.ANNOUNCEMENT && filteredItems.isNotEmpty()) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                OutlinedButton(
+                                    onClick = { scope.launch { store.refresh() } },
+                                    enabled = !isRefreshing,
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(if (isRefreshing) "同步中" else "同步通知", style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
@@ -461,14 +462,16 @@ fun TeachingHubScreen(
                                         if (term != null && database != null) {
                                             scope.launch {
                                                 val matched = TeachingImporter.findMatchingCourse(item, courses)
-                                                TeachingImporter.apply(
+                                                val created = TeachingImporter.apply(
                                                     item = item,
                                                     term = term,
                                                     course = matched,
                                                     database = database
                                                 )
-                                                val courseName = matched?.name?.let { " (关联: $it)" } ?: ""
-                                                snackbarHostState.showSnackbar("已成功导入作业「${item.title}」$courseName")
+                                                if (created != null) {
+                                                    val courseName = matched?.name?.let { " (关联: $it)" } ?: ""
+                                                    snackbarHostState.showSnackbar("已成功导入作业「${item.title}」$courseName")
+                                                }
                                             }
                                         }
                                     }
@@ -484,11 +487,20 @@ fun TeachingHubScreen(
                                     },
                                     onDownloadAttachment = { attName, attUrl ->
                                         scope.launch {
-                                            val res = TeachingDownloader.download(context, attUrl, attName)
+                                            val res = TeachingDownloader.download(
+                                                context = context,
+                                                url = attUrl,
+                                                suggestedFileName = attName,
+                                                referer = item.sourceURL
+                                            )
                                             if (res.isSuccess) {
-                                                snackbarHostState.showSnackbar("「$attName」下载成功！已存入系统下载目录。")
+                                                val msg = "「$attName」下载成功！已存入系统下载目录。"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
                                             } else {
-                                                snackbarHostState.showSnackbar("下载失败: ${res.exceptionOrNull()?.message}")
+                                                val msg = "下载失败: ${res.exceptionOrNull()?.message}"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
                                             }
                                         }
                                     }

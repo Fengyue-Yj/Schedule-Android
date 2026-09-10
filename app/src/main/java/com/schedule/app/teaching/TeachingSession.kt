@@ -39,10 +39,8 @@ class TeachingSession {
             )
             connection.setRequestProperty("Referer", "https://course.pku.edu.cn/")
 
-            // Collect all available PKU cookies
-            val specificCookies = cookieManager.getCookie(currentUrl) ?: ""
-            val originCookies = cookieManager.getCookie("https://course.pku.edu.cn") ?: ""
-            val mergedCookies = mergeCookies(specificCookies, originCookies)
+            // Collect all available PKU cookies across all paths
+            val mergedCookies = TeachingDownloader.getAllPkuCookies(cookieManager, currentUrl, "https://course.pku.edu.cn/")
             if (mergedCookies.isNotBlank()) {
                 connection.setRequestProperty("Cookie", mergedCookies)
             }

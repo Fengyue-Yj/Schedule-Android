@@ -195,7 +195,7 @@ object TeachingParser {
                     }
                 }
             }
-            if (!assignment && attachments.isEmpty() && url?.contains("bbcswebdav") == true) {
+            if (!assignment && attachments.isEmpty() && url != null && (url.contains("bbcswebdav") || url.contains("/content/file") || url.contains("launchLink"))) {
                 attachments.add(TeachingAttachment(title, url))
             }
             

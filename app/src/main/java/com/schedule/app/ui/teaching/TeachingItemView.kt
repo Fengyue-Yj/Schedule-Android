@@ -342,7 +342,12 @@ fun TeachingItemView(
                                             FilledTonalButton(
                                                 onClick = {
                                                     scope.launch {
-                                                        val res = TeachingDownloader.download(context, att.url, att.name)
+                                                        val res = TeachingDownloader.download(
+                                                            context = context,
+                                                            url = att.url,
+                                                            suggestedFileName = att.name,
+                                                            referer = item.sourceURL
+                                                        )
                                                         if (res.isSuccess) {
                                                             val msg = "「${att.name}」下载成功！已存至系统下载目录。"
                                                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()

@@ -3,6 +3,7 @@ package com.schedule.app.ui.schedule
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,38 +99,58 @@ fun NewCourseSheet(
                             }
                         }
                         // Weekday Picker
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Weekday", modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                val next = if (draft.weekday == 7) 1 else draft.weekday + 1
-                                meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekday = next) else it }
-                            }) {
-                                Text(weekdayLabel(draft.weekday))
-                            }
-                        }
-                        // Periods
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Periods", modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                val nextStart = if (draft.startPeriod == 1) 3 else if (draft.startPeriod == 3) 5 else if (draft.startPeriod == 5) 7 else if (draft.startPeriod == 7 && draft.endPeriod == 8) 7 else if (draft.startPeriod == 7) 10 else if (draft.startPeriod == 10 && draft.endPeriod == 11) 10 else 1
-                                val nextEnd = if (nextStart == 1) 2 else if (nextStart == 3) 4 else if (nextStart == 5) 6 else if (nextStart == 7 && draft.endPeriod != 8) 8 else if (nextStart == 7) 9 else if (nextStart == 10 && draft.endPeriod != 11) 11 else if (nextStart == 10) 12 else 2
-                                meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(startPeriod = nextStart, endPeriod = nextEnd) else it }
-                            }) {
-                                Text("${draft.startPeriod}-${draft.endPeriod}")
-                            }
-                        }
-                        // Week Pattern
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Week Pattern", modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                val next = when(draft.weekPattern) {
-                                    WeekPattern.ALL -> WeekPattern.ODD
-                                    WeekPattern.ODD -> WeekPattern.EVEN
-                                    WeekPattern.EVEN -> WeekPattern.ALL
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("星期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                (1..7).forEach { day ->
+                                    FilterChip(
+                                        selected = draft.weekday == day,
+                                        onClick = {
+                                            meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekday = day) else it }
+                                        },
+                                        label = { Text(weekdayLabel(day)) }
+                                    )
                                 }
-                                meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekPattern = next) else it }
-                            }) {
-                                Text(draft.weekPattern.name)
+                            }
+                        }
+
+                        // Periods Picker
+                        PeriodRangePicker(
+                            startPeriod = draft.startPeriod,
+                            endPeriod = draft.endPeriod,
+                            onRangeChanged = { newStart, newEnd ->
+                                meetingDrafts = meetingDrafts.map {
+                                    if (it.id == draft.id) it.copy(startPeriod = newStart, endPeriod = newEnd) else it
+                                }
+                            }
+                        )
+
+                        // Week Pattern
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("单双周", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                WeekPattern.entries.forEach { pattern ->
+                                    FilterChip(
+                                        selected = draft.weekPattern == pattern,
+                                        onClick = {
+                                            meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekPattern = pattern) else it }
+                                        },
+                                        label = {
+                                            Text(
+                                                when(pattern) {
+                                                    WeekPattern.ALL -> "全周"
+                                                    WeekPattern.ODD -> "单周"
+                                                    WeekPattern.EVEN -> "双周"
+                                                }
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -235,12 +256,12 @@ fun NewCourseSheet(
 
 fun weekdayLabel(day: Int): String {
     return when (day) {
-        1 -> "Monday"
-        2 -> "Tuesday"
-        3 -> "Wednesday"
-        4 -> "Thursday"
-        5 -> "Friday"
-        6 -> "Saturday"
-        else -> "Sunday"
+        1 -> "周一"
+        2 -> "周二"
+        3 -> "周三"
+        4 -> "周四"
+        5 -> "周五"
+        6 -> "周六"
+        else -> "周日"
     }
 }

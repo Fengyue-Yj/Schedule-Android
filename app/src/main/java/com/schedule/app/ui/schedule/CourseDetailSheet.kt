@@ -163,27 +163,21 @@ fun CourseDetailSheet(
                                                 if (it.id == draft.id) it.copy(weekday = day) else it
                                             }
                                         },
-                                        label = { Text(weekdayShortLabel(day)) }
+                                        label = { Text(weekdayLabel(day)) }
                                     )
                                 }
                             }
 
-                            // Periods: Start - End
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("Period:")
-                                listOf(Pair(1, 2), Pair(3, 4), Pair(5, 6), Pair(7, 8), Pair(7, 9), Pair(10, 11), Pair(10, 12)).forEach { range ->
-                                    val isSelected = draft.startPeriod == range.first && draft.endPeriod == range.second
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = {
-                                            meetingDrafts = meetingDrafts.map {
-                                                if (it.id == draft.id) it.copy(startPeriod = range.first, endPeriod = range.second) else it
-                                            }
-                                        },
-                                        label = { Text("${range.first}-${range.second}") }
-                                    )
+                            // Periods: Start - End (customizable 1-12)
+                            PeriodRangePicker(
+                                startPeriod = draft.startPeriod,
+                                endPeriod = draft.endPeriod,
+                                onRangeChanged = { newStart, newEnd ->
+                                    meetingDrafts = meetingDrafts.map {
+                                        if (it.id == draft.id) it.copy(startPeriod = newStart, endPeriod = newEnd) else it
+                                    }
                                 }
-                            }
+                            )
 
                             // Pattern
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -305,22 +299,10 @@ fun CourseDetailSheet(
     }
 }
 
-private fun weekdayShortLabel(day: Int): String {
-    return when (day) {
-        1 -> "Mon"
-        2 -> "Tue"
-        3 -> "Wed"
-        4 -> "Thu"
-        5 -> "Fri"
-        6 -> "Sat"
-        else -> "Sun"
-    }
-}
-
 private fun patternLabel(pattern: WeekPattern): String {
     return when (pattern) {
-        WeekPattern.ALL -> "All Weeks"
-        WeekPattern.ODD -> "Odd Weeks"
-        WeekPattern.EVEN -> "Even Weeks"
+        WeekPattern.ALL -> "全周"
+        WeekPattern.ODD -> "单周"
+        WeekPattern.EVEN -> "双周"
     }
 }

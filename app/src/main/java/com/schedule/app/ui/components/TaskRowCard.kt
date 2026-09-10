@@ -3,6 +3,7 @@ package com.schedule.app.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,8 +30,9 @@ fun TaskRowCard(
 ) {
     Row(
         modifier = modifier
-            .padding(horizontal = 6.dp, vertical = 10.dp)
-            .cardBackground(),
+            .fillMaxWidth()
+            .cardBackground()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(

@@ -3,12 +3,10 @@ package com.schedule.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import com.schedule.app.ui.theme.sectionTitle
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,33 +37,27 @@ fun DayAgendaView(
     val dayAssignments = assignments.filter { isSameDay(it.dueDate, date) }
     val dayExams = exams.filter { isSameDay(it.date, date) }
     
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
-            .cardBackground(cornerRadius = AppTheme.Radius.card),
-        shape = RoundedCornerShape(AppTheme.Radius.card),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface)
+            .cardBackground()
+            .padding(AppTheme.Spacing.card),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Text(
+            text = title,
+            style = AppTheme.typography.sectionTitle,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        
+        if (dayAssignments.isEmpty() && dayExams.isEmpty()) {
             Text(
-                text = title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                text = "No items",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            
-            if (dayAssignments.isEmpty() && dayExams.isEmpty()) {
-                Text(
-                    text = "No items scheduled for this day.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
+        } else {
                 if (dayAssignments.isNotEmpty()) {
                     Column {
                         dayAssignments.forEachIndexed { index, item ->
@@ -101,7 +93,6 @@ fun DayAgendaView(
                         }
                     }
                 }
-            }
         }
     }
 }

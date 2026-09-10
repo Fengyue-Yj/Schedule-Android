@@ -31,22 +31,7 @@ data class MonthDay(
     val inCurrentMonth: Boolean
 ) {
     val isToday: Boolean
-        get() {
-            val today = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            val thisDay = Calendar.getInstance().apply {
-                timeInMillis = date
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }
-            return today.timeInMillis == thisDay.timeInMillis
-        }
+        get() = isSameDay(System.currentTimeMillis(), date)
     
     val numberString: String
         get() {

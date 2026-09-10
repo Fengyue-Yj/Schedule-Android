@@ -154,18 +154,16 @@ fun CourseDetailSheet(
                             }
 
                             // Weekday Selector
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                (1..7).forEach { day ->
-                                    FilterChip(
-                                        selected = draft.weekday == day,
-                                        onClick = {
-                                            meetingDrafts = meetingDrafts.map {
-                                                if (it.id == draft.id) it.copy(weekday = day) else it
-                                            }
-                                        },
-                                        label = { Text(weekdayLabel(day)) }
-                                    )
-                                }
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("星期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                WeekdaySelector(
+                                    selectedDay = draft.weekday,
+                                    onDaySelected = { day ->
+                                        meetingDrafts = meetingDrafts.map {
+                                            if (it.id == draft.id) it.copy(weekday = day) else it
+                                        }
+                                    }
+                                )
                             }
 
                             // Periods: Start - End (customizable 1-12)

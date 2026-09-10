@@ -1,5 +1,6 @@
-﻿package com.schedule.app.ui.schedule
+package com.schedule.app.ui.schedule
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -205,6 +206,45 @@ fun PeriodRangePicker(
                     ) {
                         Text("+", fontSize = 14.sp)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeekdaySelector(
+    selectedDay: Int,
+    onDaySelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        (1..7).forEach { day ->
+            val isSelected = selectedDay == day
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(36.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                border = BorderStroke(
+                    width = if (isSelected) 1.2.dp else 0.7.dp,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                ),
+                onClick = { onDaySelected(day) }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = weekdayLabel(day),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }

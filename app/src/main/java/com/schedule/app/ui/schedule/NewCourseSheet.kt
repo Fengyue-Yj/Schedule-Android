@@ -101,22 +101,12 @@ fun NewCourseSheet(
                         // Weekday Picker
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("星期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                (1..7).forEach { day ->
-                                    FilterChip(
-                                        selected = draft.weekday == day,
-                                        onClick = {
-                                            meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekday = day) else it }
-                                        },
-                                        label = { Text(weekdayLabel(day)) }
-                                    )
+                            WeekdaySelector(
+                                selectedDay = draft.weekday,
+                                onDaySelected = { day ->
+                                    meetingDrafts = meetingDrafts.map { if (it.id == draft.id) it.copy(weekday = day) else it }
                                 }
-                            }
+                            )
                         }
 
                         // Periods Picker

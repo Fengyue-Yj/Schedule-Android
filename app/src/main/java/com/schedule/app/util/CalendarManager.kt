@@ -365,26 +365,52 @@ object CalendarManager {
     }
 
     fun parsePeriodRange(startString: String?, endString: String?, combinedString: String?): Pair<Int, Int>? {
-        // Check combined or startString for a range like "1-2节", "3~4", "1-3", "第1-2节"
-        val candidate = (combinedString ?: startString ?: "").trim()
-        val numbers = Regex("""\d+""").findAll(candidate).map { it.value.toInt() }.toList()
-        if (numbers.size >= 2) {
-            val s = numbers[0].coerceIn(1, 12)
-            val e = numbers[1].coerceIn(s, 12)
-            return Pair(s, e)
-        } else if (numbers.size == 1 && (endString == null || endString.isBlank())) {
-            val s = numbers[0].coerceIn(1, 12)
-            return Pair(s, s)
+        // 1. If explicit startString and endString are provided
+        if (!startString.isNullOrBlank() && !endString.isNullOrBlank()) {
+            val s = Regex("""\d+""").find(startString)?.value?.toIntOrNull()?.coerceIn(1, 12)
+            val e = Regex("""\d+""").find(endString)?.value?.toIntOrNull()?.coerceIn(1, 12)
+            if (s != null && e != null) {
+                return Pair(minOf(s, e), maxOf(s, e))
+            }
         }
 
-        // Separate start and end
-        val s = startString?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }?.coerceIn(1, 12)
-        val e = endString?.let { Regex("""\d+""").find(it)?.value?.toIntOrNull() }?.coerceIn(1, 12)
-        if (s != null && e != null) {
-            return Pair(minOf(s, e), maxOf(s, e))
-        } else if (s != null) {
-            return Pair(s, s)
+        val raw = (combinedString ?: startString ?: endString ?: "").trim()
+        if (raw.isBlank()) return null
+
+        // 2. Check for time range e.g. "08:00-09:50", "10:10~12:00", "15:10 - 17:00", "8:00至9:50"
+        val timeRegex = Regex("""(\d{1,2}):(\d{2})\s*[-~至到/]\s*(\d{1,2}):(\d{2})""")
+        val timeMatch = timeRegex.find(raw)
+        if (timeMatch != null) {
+            val (sh, sm, eh, em) = timeMatch.destructured
+            val startP = startTimeToPeriod(sh.toInt(), sm.toInt())
+            val endP = endTimeToPeriod(eh.toInt(), em.toInt())
+            return Pair(startP, maxOf(startP, endP))
         }
+
+        // 3. Remove week ranges and weekday labels so they don't corrupt period detection
+        var cleaned = raw
+            .replace(Regex("""(星期|周|礼拜)[1-7一二三四五六日天]"""), "")
+            .replace(Regex("""第?\s*\d+[-~至到]\d+\s*周\(?[^)]*\)?"""), "")
+            .replace(Regex("""第?\s*\d+\s*周"""), "")
+            .trim()
+
+        // 4. Match period range like "1-2节", "第1-3节", "[01-02]节", "7~9", "10-12"
+        val periodRangeRegex = Regex("""第?\s*(\d{1,2})\s*[-~至到]\s*(\d{1,2})\s*节?""")
+        val rangeMatch = periodRangeRegex.find(cleaned)
+        if (rangeMatch != null) {
+            val s = rangeMatch.groupValues[1].toInt().coerceIn(1, 12)
+            val e = rangeMatch.groupValues[2].toInt().coerceIn(1, 12)
+            return Pair(minOf(s, e), maxOf(s, e))
+        }
+
+        // 5. Match comma-separated periods like "1,2节" or "7,8,9节"
+        val commaPeriods = Regex("""\d{1,2}""").findAll(cleaned).map { it.value.toInt() }.filter { it in 1..12 }.toList()
+        if (commaPeriods.size >= 2) {
+            return Pair(commaPeriods.minOrNull()!!, commaPeriods.maxOrNull()!!)
+        } else if (commaPeriods.size == 1) {
+            return Pair(commaPeriods[0], commaPeriods[0])
+        }
+
         return null
     }
 
@@ -449,7 +475,7 @@ object CalendarManager {
     }
 
     fun inspectICS(ics: String): ImportPreview {
-        val courses = mutableListOf<CourseSeed>()
+        val rawCourses = mutableListOf<CourseSeed>()
         val events = ics.split("BEGIN:VEVENT")
         for (event in events.drop(1)) {
             val chunk = event.substringBefore("END:VEVENT")
@@ -479,6 +505,12 @@ object CalendarManager {
 
             if (summary.isBlank() || dtstart.isBlank()) continue
 
+            // Clean summary prefix like "[课程] 高等数学" -> "高等数学"
+            val cleanSummary = summary
+                .replace(Regex("""^\[.*?\]\s*"""), "")
+                .replace(Regex("""^课程[:：]\s*"""), "")
+                .trim()
+
             val timeMatch = Regex("""(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})""").find(dtstart)
             if (timeMatch != null) {
                 val (year, month, day, hourStr, minStr) = timeMatch.destructured
@@ -486,22 +518,22 @@ object CalendarManager {
                     set(year.toInt(), month.toInt() - 1, day.toInt(), hourStr.toInt(), minStr.toInt())
                 }
                 val weekday = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
-                val startPeriod = hourToPeriod(hourStr.toInt(), minStr.toInt())
+                val startPeriod = startTimeToPeriod(hourStr.toInt(), minStr.toInt())
 
                 val endPeriod = if (dtend.isNotBlank()) {
                     val endMatch = Regex("""(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})""").find(dtend)
                     if (endMatch != null) {
                         val endHour = endMatch.groupValues[4].toInt()
                         val endMin = endMatch.groupValues[5].toInt()
-                        hourToPeriod(endHour, endMin).coerceAtLeast(startPeriod)
+                        endTimeToPeriod(endHour, endMin).coerceAtLeast(startPeriod)
                     } else startPeriod
                 } else startPeriod
 
                 val pattern = if (rrule.contains("INTERVAL=2")) WeekPattern.ODD else WeekPattern.ALL
 
-                courses.add(
+                rawCourses.add(
                     CourseSeed(
-                        name = summary,
+                        name = cleanSummary,
                         teacher = description,
                         classroom = location,
                         weekday = weekday,
@@ -512,24 +544,48 @@ object CalendarManager {
                 )
             }
         }
-        return ImportPreview(courses)
+
+        // Deduplicate recurring weekly events into unique course sessions
+        val distinctCourses = rawCourses.distinctBy { 
+            "${it.name.trim()}_${it.weekday}_${it.startPeriod}_${it.endPeriod}_${it.classroom.trim()}" 
+        }
+
+        return ImportPreview(distinctCourses)
     }
 
-    private fun hourToPeriod(hour: Int, min: Int): Int {
+    fun startTimeToPeriod(hour: Int, min: Int): Int {
+        val m = hour * 60 + min
         return when {
-            hour < 8 || (hour == 8 && min <= 55) -> 1
-            hour == 9 || (hour == 8 && min > 55) -> 2
-            hour == 10 && min <= 55 -> 3
-            hour == 11 || (hour == 10 && min > 55) -> 4
-            hour == 13 && min <= 55 -> 5
-            hour == 14 || (hour == 13 && min > 55) -> 6
-            hour == 15 && min <= 55 -> 7
-            hour == 16 || (hour == 15 && min > 55) -> 8
-            hour == 17 -> 9
-            hour == 18 || (hour == 19 && min <= 20) -> 10
-            hour == 19 -> 11
-            hour >= 20 -> 12
-            else -> 1
+            m <= 8 * 60 + 30 -> 1    // ~08:00
+            m <= 9 * 60 + 30 -> 2    // ~09:00
+            m <= 10 * 60 + 40 -> 3   // ~10:10
+            m <= 11 * 60 + 40 -> 4   // ~11:10
+            m <= 13 * 60 + 30 -> 5   // ~13:00
+            m <= 14 * 60 + 30 -> 6   // ~14:00
+            m <= 15 * 60 + 40 -> 7   // ~15:10
+            m <= 16 * 60 + 40 -> 8   // ~16:10
+            m <= 17 * 60 + 40 -> 9   // ~17:10
+            m <= 19 * 60 -> 10       // ~18:40
+            m <= 20 * 60 -> 11       // ~19:40
+            else -> 12               // ~20:40+
+        }
+    }
+
+    fun endTimeToPeriod(hour: Int, min: Int): Int {
+        val m = hour * 60 + min
+        return when {
+            m <= 9 * 60 -> 1         // ~08:50
+            m <= 10 * 60 + 5 -> 2    // ~09:50
+            m <= 11 * 60 + 5 -> 3    // ~11:00
+            m <= 12 * 60 + 30 -> 4   // ~12:00
+            m <= 14 * 60 -> 5        // ~13:50
+            m <= 15 * 60 + 5 -> 6    // ~14:40-14:50
+            m <= 16 * 60 + 5 -> 7    // ~16:00
+            m <= 17 * 60 + 10 -> 8   // ~17:00
+            m <= 18 * 60 + 15 -> 9   // ~18:00
+            m <= 19 * 60 + 35 -> 10  // ~19:30
+            m <= 20 * 60 + 35 -> 11  // ~20:30
+            else -> 12               // ~21:30+
         }
     }
 }

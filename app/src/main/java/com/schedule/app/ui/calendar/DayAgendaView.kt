@@ -18,6 +18,7 @@ import com.schedule.app.data.models.AssignmentEntity
 import com.schedule.app.data.models.ExamEntity
 import com.schedule.app.ui.components.cardBackground
 import com.schedule.app.ui.theme.AppTheme
+import com.schedule.app.util.DateFormatUtil
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -31,8 +32,7 @@ fun DayAgendaView(
 ) {
     if (date == null) return
     
-    val formatter = SimpleDateFormat("MMM d", Locale.getDefault())
-    val title = formatter.format(Date(date))
+    val title = DateFormatUtil.formatMonthDay(date)
     
     val dayAssignments = assignments.filter { isSameDay(it.dueDate, date) }
     val dayExams = exams.filter { isSameDay(it.date, date) }

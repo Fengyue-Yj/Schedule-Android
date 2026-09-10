@@ -10,9 +10,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +30,9 @@ import com.schedule.app.teaching.DownloadStatus
 import com.schedule.app.teaching.TeachingDownloader
 import com.schedule.app.teaching.TeachingImporter
 import com.schedule.app.teaching.TeachingKind
+import com.schedule.app.teaching.TeachingParser
 import com.schedule.app.teaching.TeachingStore
+import com.schedule.app.util.DateFormatUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -75,6 +79,10 @@ fun TeachingItemView(
                 // Auto fuzzy match course
                 val matched = TeachingImporter.findMatchingCourse(item, loadedCourses)
                 selectedCourseId = matched?.id
+            }
+            item?.let {
+                store.markRead(it.id)
+                store.markRead(it.itemReadKey)
             }
         }
     }
@@ -132,9 +140,37 @@ fun TeachingItemView(
                     )
                 }
 
+                // Publication date
+                val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
+                if (pubTime != null || !item.publishedText.isNullOrBlank()) {
+                    val pubFormatted = if (pubTime != null) DateFormatUtil.formatDateTime(pubTime) else item.publishedText?.replace("发布者:", "")?.trim()
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "发布时间: $pubFormatted",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 // Due date
                 if (item.dueDate != null) {
-                    val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -145,8 +181,14 @@ fun TeachingItemView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                             Text(
-                                text = "截止时间: ${format.format(item.dueDate)}",
+                                text = "截止时间: ${DateFormatUtil.formatDateTime(item.dueDate)}",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.SemiBold
@@ -157,9 +199,14 @@ fun TeachingItemView(
 
                 // Body content
                 if (item.body.isNotBlank()) {
+                    val sectionTitle = when (item.kind) {
+                        TeachingKind.ANNOUNCEMENT -> "通知内容"
+                        TeachingKind.ASSIGNMENT -> "作业说明"
+                        TeachingKind.MATERIAL -> "资料说明"
+                    }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("内容说明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text(sectionTitle, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(8.dp))
                             Text(text = item.body, style = MaterialTheme.typography.bodyMedium)
                         }

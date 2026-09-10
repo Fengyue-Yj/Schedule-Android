@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -33,7 +34,9 @@ import com.schedule.app.teaching.TeachingDownloader
 import com.schedule.app.teaching.TeachingImporter
 import com.schedule.app.teaching.TeachingItem
 import com.schedule.app.teaching.TeachingKind
+import com.schedule.app.teaching.TeachingParser
 import com.schedule.app.teaching.TeachingStore
+import com.schedule.app.util.DateFormatUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -242,6 +245,12 @@ fun TeachingHubScreen(
 
             val filteredItems = snapshot.items.filter { 
                 it.kind == selectedKind && (courseFilter.isEmpty() || it.courseID == courseFilter)
+            }.let { list ->
+                if (selectedKind == TeachingKind.ANNOUNCEMENT) {
+                    TeachingItem.newestFirst(list)
+                } else {
+                    list
+                }
             }
 
             if (filteredItems.isEmpty()) {
@@ -431,8 +440,18 @@ fun TeachingHubScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.End
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
                             ) {
+                                OutlinedButton(
+                                    onClick = { store.markAllAnnouncementsRead() },
+                                    modifier = Modifier.height(36.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("全部已读", style = MaterialTheme.typography.labelSmall)
+                                }
+
                                 OutlinedButton(
                                     onClick = { scope.launch { store.refresh() } },
                                     enabled = !isRefreshing,
@@ -587,9 +606,8 @@ private fun AssignmentCard(
             }
 
             if (item.dueDate != null) {
-                val format = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                 Text(
-                    text = "截止: ${format.format(item.dueDate)}",
+                    text = "截止: ${DateFormatUtil.formatDateTime(item.dueDate)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
@@ -785,6 +803,12 @@ private fun AnnouncementCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+            val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
+            val pubDisplay = when {
+                pubTime != null -> DateFormatUtil.formatDateTime(pubTime)
+                !item.publishedText.isNullOrBlank() -> item.publishedText.replace("发布者:", "").trim()
+                else -> null
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -793,11 +817,14 @@ private fun AnnouncementCard(
                 Text(
                     text = item.displayCourseTitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-                if (item.publishedText != null) {
+                if (pubDisplay != null) {
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = item.publishedText,
+                        text = pubDisplay,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )

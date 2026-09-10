@@ -28,6 +28,22 @@ data class ContentPage(
     val folders: List<String> = emptyList()
 )
 
+data class TeachingMetadataPage(
+    val results: List<TeachingContentMetadata> = emptyList(),
+    val paging: Paging? = null
+) {
+    data class Paging(val nextPage: String? = null)
+}
+
+data class TeachingContentMetadata(
+    val id: String,
+    val title: String? = null,
+    val body: String? = null,
+    val created: String? = null,
+    val modified: String? = null,
+    val hasChildren: Boolean? = null
+)
+
 data class TeachingItem(
     val id: String,
     val courseID: String,
@@ -49,6 +65,19 @@ data class TeachingItem(
 
     val itemReadKey: String
         get() = if (readKey.isNotEmpty()) readKey else "$id:${publishedText ?: ""}:${body.take(120).hashCode()}"
+
+    companion object {
+        fun newestFirst(items: List<TeachingItem>): List<TeachingItem> {
+            return items.sortedWith { a, b ->
+                when {
+                    a.publishedAt != null && b.publishedAt != null -> b.publishedAt.compareTo(a.publishedAt)
+                    a.publishedAt != null -> -1
+                    b.publishedAt != null -> 1
+                    else -> 0
+                }
+            }
+        }
+    }
 }
 
 data class TeachingSnapshot(
@@ -66,6 +95,9 @@ object TeachingURLs {
     const val me = "$origin/learn/api/public/v1/users/me"
 
     fun course(courseId: String) = "$origin/webapps/blackboard/execute/announcement?method=search&context=course_entry&course_id=$courseId&handle=announcements_entry&mode=view"
+    fun announcements(courseId: String) = course(courseId)
+    fun announcementsSimple(courseId: String) = "$origin/webapps/blackboard/execute/announcement?method=search&course_id=$courseId"
+    fun announcementsApi(courseId: String) = "$origin/learn/api/public/v1/courses/$courseId/announcements?limit=100"
     fun content(courseId: String, contentId: String) = "$origin/webapps/blackboard/content/listContent.jsp?course_id=$courseId&content_id=$contentId"
     fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?action=newAttempt&course_id=$courseId&content_id=$contentId"
     

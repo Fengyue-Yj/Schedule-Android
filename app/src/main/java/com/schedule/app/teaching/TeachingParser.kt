@@ -3,6 +3,7 @@ package com.schedule.app.teaching
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import com.google.gson.Gson
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -61,11 +62,11 @@ object TeachingParser {
     fun cleanHtmlToText(element: Element?): String {
         if (element == null) return ""
         val clone = element.clone()
-        clone.select("br").append("\\n")
-        clone.select("p").prepend("\\n\\n")
-        clone.select("div").prepend("\\n")
-        clone.select("li").prepend("\\n• ")
-        return clone.text().replace("\\n", "\n").replace(Regex("\n{3,}"), "\n\n").trim()
+        clone.select("br").append("\n")
+        clone.select("p").prepend("\n\n")
+        clone.select("div").prepend("\n")
+        clone.select("li").prepend("\n• ")
+        return clone.text().replace("\r", "").replace(Regex("\n{3,}"), "\n\n").trim()
     }
 
     fun parseAnnouncementUrl(html: String, courseId: String): String? {
@@ -78,36 +79,85 @@ object TeachingParser {
         return link?.attr("href")?.let { TeachingURLs.resolve(it) }
     }
 
+    fun parseApiAnnouncements(json: String, course: TeachingCourse): List<TeachingItem> {
+        val result = mutableListOf<TeachingItem>()
+        try {
+            val page = Gson().fromJson(json, TeachingMetadataPage::class.java) ?: return emptyList()
+            for (row in page.results) {
+                val title = row.title?.trim()
+                if (title.isNullOrEmpty() || title == "公告" || title == "Announcements" || title == "课程公告") continue
+                val bodyDoc = Jsoup.parse(row.body ?: "")
+                val bodyText = cleanHtmlToText(bodyDoc.body() ?: bodyDoc)
+                val publishedAtDate = row.created?.let { parseDate(it) }
+                result.add(
+                    TeachingItem(
+                        id = "${course.id}:notice:${row.id}",
+                        courseID = course.id,
+                        courseTitle = course.title,
+                        contentID = row.id,
+                        kind = TeachingKind.ANNOUNCEMENT,
+                        title = title,
+                        body = bodyText,
+                        publishedText = row.created,
+                        publishedAt = publishedAtDate?.time,
+                        sourceURL = TeachingURLs.course(course.id),
+                        attachments = parseAttachments(bodyDoc)
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
+    }
+
     fun parseAnnouncements(html: String, course: TeachingCourse): List<TeachingItem> {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
         val result = mutableListOf<TeachingItem>()
         val seen = mutableSetOf<String>()
 
-        for (heading in doc.select("#announcementList h3, #content_listContainer h3, .announcement h3, .vtbegenerated h3")) {
-            val title = heading.text().trim()
-            if (title.isEmpty() || title == "公告" || title == "Announcements") continue
-            val parent = heading.parent() ?: heading
-            var content = ""
-            var published = ""
-            var next = heading.nextElementSibling()
-            var count = 0
-            while (next != null && next.tagName() != "h3" && count < 20) {
-                val text = next.text().trim()
-                if (text.contains("发布") || text.contains("posted on", ignoreCase = true)) {
-                    published = text
-                } else if (text.isNotEmpty()) {
-                    val formatted = cleanHtmlToText(next)
-                    content += if (content.isEmpty()) formatted else "\n$formatted"
+        // Strategy 1: Container-level selectors (modern & classic Blackboard announcement lists)
+        val containers = doc.select("#announcementList > li, ul.announcementList > li, #content_listContainer > li, .announcement, div.announcementItem, .announcementEntry")
+        for (container in containers) {
+            val titleEl = container.select("h3, h4, .item, a.entryLink, .title").firstOrNull() ?: continue
+            val title = titleEl.text().trim()
+            if (title.isEmpty() || title == "公告" || title == "Announcements" || title == "课程公告") continue
+
+            val detailsEl = container.select(".details, .postedBy, span.date, .metadata, .time").firstOrNull()
+            var published = detailsEl?.text()?.trim() ?: ""
+            if (published.isEmpty()) {
+                val candidate = container.select("p, span, div").firstOrNull { 
+                    val t = it.text()
+                    t.contains("发布") || t.contains("posted on", ignoreCase = true) || t.contains("Posted by", ignoreCase = true)
                 }
-                next = next.nextElementSibling()
-                count++
+                if (candidate != null) {
+                    published = candidate.text().trim()
+                }
             }
-            if (content.isEmpty()) {
-                content = cleanHtmlToText(parent.select(".vtbegenerated, .details").firstOrNull() ?: parent)
+
+            val bodyEl = container.select(".vtbegenerated, .announcement-body, .description, .content").firstOrNull()
+            val content = if (bodyEl != null) {
+                cleanHtmlToText(bodyEl)
+            } else {
+                // Sibling text after titleEl
+                var c = ""
+                var next = titleEl.nextElementSibling()
+                var count = 0
+                while (next != null && next.tagName() != "h3" && count < 20) {
+                    val text = next.text().trim()
+                    if (text.isNotEmpty() && !text.contains("发布") && !text.contains("posted on", ignoreCase = true)) {
+                        val formatted = cleanHtmlToText(next)
+                        c += if (c.isEmpty()) formatted else "\n$formatted"
+                    }
+                    next = next.nextElementSibling()
+                    count++
+                }
+                c.ifEmpty { cleanHtmlToText(container).removePrefix(title).trim() }
             }
-            val rawID = if (heading.id().isEmpty()) (if (parent.tagName() == "li") parent.id() else "") else heading.id()
-            val id = if (rawID.isEmpty()) TeachingURLs.digest(title + published) else rawID
+
+            val rawID = container.id().ifEmpty { titleEl.id() }
+            val id = rawID.ifEmpty { TeachingURLs.digest(title + published) }
             if (seen.add(id)) {
                 val publishedAtDate = parseDate(published)
                 result.add(
@@ -122,9 +172,56 @@ object TeachingParser {
                         publishedText = published.takeIf { it.isNotEmpty() },
                         publishedAt = publishedAtDate?.time,
                         sourceURL = TeachingURLs.course(course.id),
-                        attachments = parseAttachments(parent)
+                        attachments = parseAttachments(container)
                     )
                 )
+            }
+        }
+
+        // Strategy 2: Fallback heading selector (if containers didn't catch anything)
+        if (result.isEmpty()) {
+            for (heading in doc.select("#announcementList h3, #content_listContainer h3, .announcement h3, .vtbegenerated h3, h3.item")) {
+                val title = heading.text().trim()
+                if (title.isEmpty() || title == "公告" || title == "Announcements" || title == "课程公告") continue
+                val parent = heading.parent() ?: heading
+                var content = ""
+                var published = parent.select(".details, .postedBy, span.date").text().trim()
+                var next = heading.nextElementSibling()
+                var count = 0
+                while (next != null && next.tagName() != "h3" && count < 20) {
+                    val text = next.text().trim()
+                    if (text.contains("发布") || text.contains("posted on", ignoreCase = true)) {
+                        if (published.isEmpty()) published = text
+                    } else if (text.isNotEmpty()) {
+                        val formatted = cleanHtmlToText(next)
+                        content += if (content.isEmpty()) formatted else "\n$formatted"
+                    }
+                    next = next.nextElementSibling()
+                    count++
+                }
+                if (content.isEmpty()) {
+                    content = cleanHtmlToText(parent.select(".vtbegenerated, .details").firstOrNull() ?: parent)
+                }
+                val rawID = if (heading.id().isEmpty()) (if (parent.tagName() == "li") parent.id() else "") else heading.id()
+                val id = if (rawID.isEmpty()) TeachingURLs.digest(title + published) else rawID
+                if (seen.add(id)) {
+                    val publishedAtDate = parseDate(published)
+                    result.add(
+                        TeachingItem(
+                            id = "${course.id}:notice:$id",
+                            courseID = course.id,
+                            courseTitle = course.title,
+                            contentID = id,
+                            kind = TeachingKind.ANNOUNCEMENT,
+                            title = title,
+                            body = content,
+                            publishedText = published.takeIf { it.isNotEmpty() },
+                            publishedAt = publishedAtDate?.time,
+                            sourceURL = TeachingURLs.course(course.id),
+                            attachments = parseAttachments(parent)
+                        )
+                    )
+                }
             }
         }
         return result
@@ -241,8 +338,16 @@ object TeachingParser {
 
     fun parseDate(text: String): Date? {
         val normalized = text.replace("\u00a0", " ").trim()
-        // Chinese pattern: 2024年10月15日 星期二 下午 23:59 or 2024年10月15日 下午11:59
-        val chineseRegex = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日\s*(?:星期\S\s*)?(上午|下午)?\s*(\d{1,2}):(\d{2})""")
+        if (normalized.isEmpty()) return null
+
+        // 1. ISO 8601 (e.g. 2024-09-01T10:00:00.000Z or 2024-09-01T10:00:00Z)
+        try {
+            val instant = java.time.Instant.parse(normalized)
+            return Date.from(instant)
+        } catch (_: Exception) {}
+
+        // 2. Chinese pattern with full regex search (e.g. 2024年10月15日 星期二 下午 23:59 or 发布时间: 2024年9月2日 08:30)
+        val chineseRegex = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*(?:星期\S)?)?(?:\s*(上午|下午))?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?""")
         val match = chineseRegex.find(normalized)
         if (match != null) {
             try {
@@ -252,33 +357,53 @@ object TeachingParser {
                 val ampm = match.groupValues[4]
                 var hour = match.groupValues[5].toInt()
                 val minute = match.groupValues[6].toInt()
+                val second = match.groupValues[7].toIntOrNull() ?: 0
                 if (ampm == "下午" && hour < 12) hour += 12
                 if (ampm == "上午" && hour == 12) hour = 0
                 val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
-                cal.set(year, month - 1, day, hour, minute, 0)
+                cal.set(year, month - 1, day, hour, minute, second)
                 cal.set(java.util.Calendar.MILLISECOND, 0)
                 return cal.time
-            } catch (e: Exception) {
-                // Ignore
+            } catch (_: Exception) {}
+        }
+
+        // 3. Extract date pattern like 2024-09-01 10:00:00 or 2024/09/01 10:00 from string
+        val stdDateRegex = Regex("""(\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)""")
+        val stdMatch = stdDateRegex.find(normalized)
+        if (stdMatch != null) {
+            val candidate = stdMatch.groupValues[1]
+            val formats = listOf(
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy/MM/dd HH:mm:ss",
+                "yyyy-MM-dd HH:mm",
+                "yyyy/MM/dd HH:mm",
+                "yyyy-MM-dd",
+                "yyyy/MM/dd"
+            )
+            for (format in formats) {
+                try {
+                    val sdf = SimpleDateFormat(format, Locale.US)
+                    sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
+                    return sdf.parse(candidate)
+                } catch (_: Exception) {}
             }
         }
-        val formats = listOf(
-            "yyyy-MM-dd HH:mm",
-            "yyyy/MM/dd HH:mm",
-            "yyyy-MM-dd",
-            "yyyy/MM/dd",
+
+        // 4. English patterns
+        val enFormats = listOf(
+            "EEEE, MMMM d, yyyy h:mm:ss a",
             "EEEE, MMMM d, yyyy h:mm a",
+            "MMMM d, yyyy h:mm:ss a",
             "MMMM d, yyyy h:mm a",
-            "MMM d, yyyy h:mm a"
+            "MMM d, yyyy h:mm a",
+            "MMM d, yyyy"
         )
-        for (format in formats) {
-            val sdf = SimpleDateFormat(format, Locale.US)
-            sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
+        for (format in enFormats) {
             try {
+                val sdf = SimpleDateFormat(format, Locale.US)
+                sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
                 return sdf.parse(normalized)
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (_: Exception) {}
         }
         return null
     }

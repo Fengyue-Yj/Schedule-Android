@@ -9,6 +9,7 @@ import com.schedule.app.data.AppDatabase
 import com.schedule.app.data.models.ExamEntity
 import com.schedule.app.data.models.CourseEntity
 import com.schedule.app.ui.theme.AppTheme
+import com.schedule.app.util.DateFormatUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -79,7 +80,7 @@ fun ExamDetailView(
                         Text(item.detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Date: ${item.date}")
+                    Text("Date: ${DateFormatUtil.formatDateTime(item.date)}")
                     item.courseId?.let { courseId ->
                         courses.find { it.id == courseId }?.let { course ->
                             Spacer(modifier = Modifier.height(8.dp))

@@ -88,6 +88,12 @@ class TeachingSession {
         html
     }
 
+    suspend fun getOrNull(urlString: String): String? = try {
+        get(urlString)
+    } catch (e: Exception) {
+        null
+    }
+
     private fun saveCookiesFromHeaders(url: String, connection: HttpURLConnection) {
         val headerFields = connection.headerFields
         val setCookieHeaders = headerFields["Set-Cookie"] ?: headerFields["set-cookie"] ?: emptyList()

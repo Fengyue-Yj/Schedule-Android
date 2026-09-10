@@ -9,6 +9,7 @@ import com.schedule.app.data.AppDatabase
 import com.schedule.app.data.models.AssignmentEntity
 import com.schedule.app.data.models.CourseEntity
 import com.schedule.app.ui.theme.AppTheme
+import com.schedule.app.util.DateFormatUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -100,7 +101,7 @@ fun AssignmentDetailView(
                         Text(item.detail)
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Due Date: ${item.dueDate}")
+                    Text("Due Date: ${DateFormatUtil.formatDateTime(item.dueDate)}")
                     item.courseId?.let { courseId ->
                         courses.find { it.id == courseId }?.let { course ->
                             Spacer(modifier = Modifier.height(8.dp))

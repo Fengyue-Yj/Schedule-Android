@@ -98,17 +98,41 @@ class TeachingStore private constructor(private val context: Context) {
         }
     }
 
+    val unreadCount: Int
+        get() = _snapshot.value.items.count {
+            it.kind == TeachingKind.ANNOUNCEMENT &&
+            !_snapshot.value.readKeys.contains(it.id) &&
+            !_snapshot.value.readKeys.contains(it.itemReadKey)
+        }
+
     private suspend fun fetchCourse(course: TeachingCourse): List<TeachingItem> {
+        // 1. Try Blackboard Learn REST API for announcements first
+        val apiJson = session.getOrNull(TeachingURLs.announcementsApi(course.id))
+        val apiAnnouncements = if (!apiJson.isNullOrBlank()) {
+            TeachingParser.parseApiAnnouncements(apiJson, course)
+        } else {
+            emptyList()
+        }
+
+        // 2. Fetch course HTML page
         val courseHtml = session.get(TeachingURLs.course(course.id))
-        var announcements = TeachingParser.parseAnnouncements(courseHtml, course)
-        if (announcements.isEmpty()) {
+        var htmlAnnouncements = TeachingParser.parseAnnouncements(courseHtml, course)
+        if (htmlAnnouncements.isEmpty()) {
             val menuAnnounceUrl = TeachingParser.parseAnnouncementUrl(courseHtml, course.id)
             if (menuAnnounceUrl != null && menuAnnounceUrl != TeachingURLs.course(course.id)) {
                 try {
                     val announceHtml = session.get(menuAnnounceUrl)
-                    announcements = TeachingParser.parseAnnouncements(announceHtml, course)
+                    htmlAnnouncements = TeachingParser.parseAnnouncements(announceHtml, course)
                 } catch (_: Exception) {}
             }
+        }
+
+        // Merge API & HTML announcements
+        val announcements = if (apiAnnouncements.isNotEmpty()) {
+            val seenTitles = apiAnnouncements.map { it.title }.toSet()
+            apiAnnouncements + htmlAnnouncements.filter { !seenTitles.contains(it.title) }
+        } else {
+            htmlAnnouncements
         }
         val result = announcements.toMutableList()
         val roots = TeachingParser.parseRoots(courseHtml)
@@ -158,6 +182,17 @@ class TeachingStore private constructor(private val context: Context) {
     fun markRead(id: String) {
         val keys = _snapshot.value.readKeys.toMutableSet()
         keys.add(id)
+        saveSnapshot(_snapshot.value.copy(readKeys = keys))
+    }
+
+    fun markAllAnnouncementsRead() {
+        val keys = _snapshot.value.readKeys.toMutableSet()
+        for (item in _snapshot.value.items) {
+            if (item.kind == TeachingKind.ANNOUNCEMENT) {
+                keys.add(item.id)
+                keys.add(item.itemReadKey)
+            }
+        }
         saveSnapshot(_snapshot.value.copy(readKeys = keys))
     }
     

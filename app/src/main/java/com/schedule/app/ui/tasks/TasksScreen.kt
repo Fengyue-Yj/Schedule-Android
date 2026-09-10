@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material3.*
@@ -26,6 +27,7 @@ import com.schedule.app.ui.teaching.TeachingHubScreen
 import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.ui.theme.caption
 import com.schedule.app.ui.theme.rowTitle
+import com.schedule.app.util.DateFormatUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -160,8 +162,8 @@ fun TasksScreen(
                                         onSelectionChange = { assignmentFilter = it }
                                     )
                                     HeaderActionButton(
-                                        title = "教学网作业",
-                                        icon = Icons.Default.CloudDownload,
+                                        title = "同步教学网作业",
+                                        icon = Icons.Default.Sync,
                                         onClick = { showTeachingHub = true }
                                     )
                                 }
@@ -218,80 +220,16 @@ fun TasksScreen(
                 }
                 TaskSection.ASSIGNMENTS -> {
                     if (sortedAssignments.isEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            AppEmptyState(
-                                title = if (assignmentFilter == AssignmentFilter.ALL) "暂无作业" else "无${assignmentFilter.title}作业",
-                                message = "可点击右上角「+」手动添加作业，或直接从北大教学网一键同步导入。",
-                                systemImage = "checklist"
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { showTeachingHub = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.accent),
-                                shape = RoundedCornerShape(14.dp),
-                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
-                            ) {
-                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("⚡ 从北大教学网一键导入作业", fontWeight = FontWeight.SemiBold)
-                            }
-                        }
+                        AppEmptyState(
+                            title = if (assignmentFilter == AssignmentFilter.ALL) "暂无作业" else "无${assignmentFilter.title}作业",
+                            message = "可点击右上角「+」手动添加作业，或点击右上角同步图标同步教学网作业。",
+                            systemImage = "checklist"
+                        )
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(AppTheme.Spacing.row),
                             contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp)
                         ) {
-                            item {
-                                Surface(
-                                    onClick = { showTeachingHub = true },
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = AppTheme.colors.accent.copy(alpha = 0.08f),
-                                    border = BorderStroke(
-                                        0.8.dp,
-                                        AppTheme.colors.accent.copy(alpha = 0.25f)
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 6.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.CloudDownload,
-                                            contentDescription = null,
-                                            tint = AppTheme.colors.accent,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = "北大教学网作业同步",
-                                                style = AppTheme.typography.caption.copy(fontWeight = FontWeight.SemiBold),
-                                                color = AppTheme.colors.accent
-                                            )
-                                            Text(
-                                                text = "点击一键拉取教学网最新作业与截止时间",
-                                                style = AppTheme.typography.caption,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                            contentDescription = null,
-                                            tint = AppTheme.colors.accent.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
                             items(sortedAssignments) { item ->
                                 val course = courses.find { it.id == item.courseId }
                                 AssignmentRow(
@@ -416,8 +354,6 @@ private fun AssignmentRow(
     onOpen: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
-
     TaskRowCard(
         title = item.content,
         onOpen = onOpen,
@@ -449,7 +385,7 @@ private fun AssignmentRow(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = dateFormat.format(item.dueDate),
+                        text = DateFormatUtil.formatDateTime(item.dueDate),
                         style = AppTheme.typography.caption,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                     )
@@ -474,8 +410,6 @@ private fun ExamRow(
     onOpen: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
-
     TaskRowCard(
         title = item.subject,
         onOpen = onOpen,
@@ -517,7 +451,7 @@ private fun ExamRow(
                     )
                 }
                 Text(
-                    text = dateFormat.format(item.date),
+                    text = DateFormatUtil.formatDateTime(item.date),
                     style = AppTheme.typography.caption,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )

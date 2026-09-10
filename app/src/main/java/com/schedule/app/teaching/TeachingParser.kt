@@ -21,24 +21,40 @@ object TeachingParser {
 
         val portlets = doc.select("div.portlet")
         for (portlet in portlets) {
-            val titleText = portlet.select("span.moduleTitle").text()
-            val current = titleText.contains("当前") || titleText.contains("Current", ignoreCase = true)
-            for (link in portlet.select("ul.courseListing li a")) {
+            val titleText = portlet.select("span.moduleTitle, h2, h3").text()
+            val current = titleText.contains("当前") || titleText.contains("Current", ignoreCase = true) || titleText.contains("本学期") || titleText.contains("在读")
+            for (link in portlet.select("ul.courseListing li a, a[href*='course_id='], a[href*='key=']")) {
                 val href = link.attr("href")
-                val regex = Regex("""key=([\d_]+)""")
-                var id = regex.find(href)?.groupValues?.get(1)
+                val idMatch = Regex("""(?:key=|course_id=)([\d_]+)""").find(href)
+                var id = idMatch?.groupValues?.get(1)
                 if (id == null) {
-                    val url = TeachingURLs.resolve(href) ?: continue
-                    id = url.substringAfter("course_id=").substringBefore("&")
+                    val url = TeachingURLs.resolve(href)
+                    if (url != null) {
+                        id = Regex("""(?:key=|course_id=)([\d_]+)""").find(url)?.groupValues?.get(1)
+                    }
                 }
-                if (id.isNotEmpty() && seen.add(id)) {
-                    result.add(TeachingCourse(id, link.text(), current))
+                val courseTitle = link.text().trim()
+                if (!id.isNullOrEmpty() && courseTitle.isNotEmpty() && seen.add(id)) {
+                    result.add(TeachingCourse(id, courseTitle, current))
                 }
             }
         }
-        if (result.isEmpty() && doc.select("ul.courseListing, #courseMenuPalette_contents").isEmpty()) {
-            throw TeachingError.UnexpectedPage
+
+        // Fallback: search anywhere in document if portlets missed courses
+        if (result.isEmpty()) {
+            for (link in doc.select("ul.courseListing li a, a[href*='course_id='], a[href*='key=']")) {
+                val href = link.attr("href")
+                val idMatch = Regex("""(?:key=|course_id=)([\d_]+)""").find(href)
+                val id = idMatch?.groupValues?.get(1) ?: TeachingURLs.resolve(href)?.let {
+                    Regex("""(?:key=|course_id=)([\d_]+)""").find(it)?.groupValues?.get(1)
+                }
+                val courseTitle = link.text().trim()
+                if (!id.isNullOrEmpty() && courseTitle.isNotEmpty() && seen.add(id)) {
+                    result.add(TeachingCourse(id, courseTitle, true))
+                }
+            }
         }
+
         return result
     }
 
@@ -96,16 +112,14 @@ object TeachingParser {
     fun parseRoots(html: String): List<String> {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
-        val links = doc.select("#courseMenuPalette_contents > li > a")
+        val links = doc.select("#courseMenuPalette_contents li a, #courseMenuPalette_div li a, a.courseMenuLink, a[href*='content_id='], a[href*='listContent']")
         val roots = mutableSetOf<String>()
         for (link in links) {
             val href = link.attr("href")
-            val url = TeachingURLs.resolve(href) ?: continue
-            if (url.contains("listContent.jsp")) {
-                val contentId = Regex("""content_id=([0-9_]+)""").find(url)?.groupValues?.get(1)
-                if (!contentId.isNullOrEmpty()) {
-                    roots.add(contentId)
-                }
+            val contentId = Regex("""content_id=([0-9_]+)""").find(href)?.groupValues?.get(1)
+                ?: TeachingURLs.resolve(href)?.let { Regex("""content_id=([0-9_]+)""").find(it)?.groupValues?.get(1) }
+            if (!contentId.isNullOrEmpty()) {
+                roots.add(contentId)
             }
         }
         return roots.toList().sorted()
@@ -186,8 +200,9 @@ object TeachingParser {
     private fun parseAttachments(element: Element): List<TeachingAttachment> {
         val attachments = mutableListOf<TeachingAttachment>()
         val seen = mutableSetOf<String>()
-        for (a in element.select("ul.attachments a, audio + ul a, a[href*='bbcswebdav']")) {
-            val url = TeachingURLs.resolve(a.attr("href")) ?: continue
+        for (a in element.select("ul.attachments a, audio + ul a, a[href*='bbcswebdav'], a[href*='/content/file'], a[href*='launchLink'], a[href*='download']")) {
+            val href = a.attr("href")
+            val url = TeachingURLs.resolve(href) ?: continue
             if (seen.add(url)) {
                 var name = a.text().trim()
                 if (name.isEmpty()) name = TeachingURLs.filename(url)

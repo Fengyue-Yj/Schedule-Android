@@ -19,6 +19,7 @@ import com.schedule.app.data.models.SettingEntity
 import com.schedule.app.ui.components.HeaderActionButton
 import com.schedule.app.ui.components.PageHeader
 import com.schedule.app.ui.settings.SettingsScreen
+import com.schedule.app.ui.teaching.TeachingHubScreen
 import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.util.CalendarManager
 
@@ -29,6 +30,18 @@ fun HomeScreen(
     database: AppDatabase,
     onTermChanged: (SettingEntity) -> Unit = {}
 ) {
+    var teachingHubCourseId by remember { mutableStateOf<String?>(null) }
+
+    if (teachingHubCourseId != null) {
+        TeachingHubScreen(
+            onNavigateBack = { teachingHubCourseId = null },
+            term = term,
+            database = database,
+            initialCourseFilter = teachingHubCourseId ?: ""
+        )
+        return
+    }
+
     val coursesWithMeetings by database.courseDao().getCourseWithMeetings(term.id).collectAsState(initial = emptyList())
 
     val totalWeeks = maxOf(term.totalWeeks, 1)
@@ -115,7 +128,11 @@ fun HomeScreen(
         CourseDetailSheet(
             courseWithMeetings = course,
             database = database,
-            onDismiss = { selectedCourseForDetail = null }
+            onDismiss = { selectedCourseForDetail = null },
+            onOpenTeachingHub = { courseId ->
+                selectedCourseForDetail = null
+                teachingHubCourseId = courseId
+            }
         )
     }
 

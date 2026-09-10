@@ -44,7 +44,9 @@ import java.util.Locale
 fun TeachingHubScreen(
     onNavigateBack: () -> Unit,
     term: SettingEntity? = null,
-    database: AppDatabase? = null
+    database: AppDatabase? = null,
+    initialKind: TeachingKind = TeachingKind.ASSIGNMENT,
+    initialCourseFilter: String = ""
 ) {
     val context = LocalContext.current
     val store = remember { TeachingStore.getInstance(context) }
@@ -55,10 +57,11 @@ fun TeachingHubScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    var selectedKind by remember { mutableStateOf(TeachingKind.ASSIGNMENT) }
+    var selectedKind by remember { mutableStateOf(initialKind) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
     var isBatchImporting by remember { mutableStateOf(false) }
-    var courseFilter by remember { mutableStateOf("") }
+    var isBatchDownloading by remember { mutableStateOf(false) }
+    var courseFilter by remember { mutableStateOf(initialCourseFilter) }
 
     // Collect courses and imported assignments
     val courses by remember(term, database) {
@@ -68,6 +71,31 @@ fun TeachingHubScreen(
             kotlinx.coroutines.flow.flowOf(emptyList())
         }
     }.collectAsState(initial = emptyList())
+
+    val matchingTeachingCourseId = remember(snapshot.courses, snapshot.courseLinks, initialCourseFilter, courses) {
+        if (initialCourseFilter.isEmpty()) ""
+        else {
+            if (snapshot.courses.any { it.id == initialCourseFilter }) {
+                initialCourseFilter
+            } else {
+                val localCourse = courses.firstOrNull { it.id == initialCourseFilter }
+                val linkedTeachingId = snapshot.courseLinks.entries.firstOrNull { it.value == initialCourseFilter }?.key
+                if (linkedTeachingId != null) {
+                    linkedTeachingId
+                } else if (localCourse != null) {
+                    snapshot.courses.firstOrNull { 
+                        it.displayTitle.contains(localCourse.name) || localCourse.name.contains(it.displayTitle)
+                    }?.id ?: ""
+                } else ""
+            }
+        }
+    }
+
+    LaunchedEffect(matchingTeachingCourseId) {
+        if (matchingTeachingCourseId.isNotEmpty()) {
+            courseFilter = matchingTeachingCourseId
+        }
+    }
 
     val importedIds by remember(term, database) {
         if (term != null && database != null) {
@@ -224,10 +252,19 @@ fun TeachingHubScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "可点击右上角刷新按钮从教学网重新同步",
+                            text = "可点击右上角刷新按钮或下方按钮从教学网重新同步",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Button(
+                            onClick = { scope.launch { store.refresh() } },
+                            enabled = !isRefreshing
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isRefreshing) "正在同步中..." else "从教学网同步最新数据")
+                        }
                     }
                 }
             } else {
@@ -310,6 +347,90 @@ fun TeachingHubScreen(
                                             Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                             Spacer(Modifier.width(8.dp))
                                             Text("一键导入全部作业到课表待办")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Top Card for Material Tab: One-Click Batch Download
+                    if (selectedKind == TeachingKind.MATERIAL && filteredItems.any { it.attachments.isNotEmpty() }) {
+                        val allAttachments = filteredItems.flatMap { item -> item.attachments.map { att -> Pair(att, item) } }
+                        val downloadedCount = allAttachments.count { (att, _) -> TeachingDownloader.isDownloaded(context, att.name) }
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            "📥 一键下载全部资料课件",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Text(
+                                        "共发现 ${allAttachments.size} 个资料课件附件 (已下载 $downloadedCount 个)\n点击即可一键保存至手机「Download/Schedule」目录，并可在下方直接打开查看。",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            if (!isBatchDownloading) {
+                                                isBatchDownloading = true
+                                                scope.launch {
+                                                    try {
+                                                        var succ = 0
+                                                        var fail = 0
+                                                        for ((att, _) in allAttachments) {
+                                                            if (!TeachingDownloader.isDownloaded(context, att.name)) {
+                                                                val res = TeachingDownloader.download(context, att.url, att.name)
+                                                                if (res.isSuccess) succ++ else fail++
+                                                            }
+                                                        }
+                                                        snackbarHostState.showSnackbar("批量下载完成: 已就绪 $succ 个附件${if (fail > 0) "，失败 $fail 个" else ""}")
+                                                    } catch (e: Exception) {
+                                                        snackbarHostState.showSnackbar("批量下载出错: ${e.localizedMessage}")
+                                                    } finally {
+                                                        isBatchDownloading = false
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = !isBatchDownloading,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (isBatchDownloading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("正在批量下载资料课件中...")
+                                        } else {
+                                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("一键下载当前全部附件 (${allAttachments.size})")
                                         }
                                     }
                                 }

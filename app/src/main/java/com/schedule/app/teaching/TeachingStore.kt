@@ -57,16 +57,17 @@ class TeachingStore private constructor(private val context: Context) {
             return@withContext
         }
         _isRefreshing.value = true
-        _message.value = "Fetching courses..."
+        _message.value = "正在获取教学网课程列表..."
         try {
             val homeHtml = session.get(TeachingURLs.home)
-            val courses = TeachingParser.parseCourses(homeHtml).filter { it.isCurrent }
-            val chosen = courses
+            val allCourses = TeachingParser.parseCourses(homeHtml)
+            val currentCourses = allCourses.filter { it.isCurrent }
+            val chosen = if (currentCourses.isNotEmpty()) currentCourses else allCourses
             val replacement = _snapshot.value.items.toMutableList()
             var successfulCourses = 0
             
             for ((index, course) in chosen.withIndex()) {
-                _message.value = "${index + 1}/${chosen.size} · ${course.displayTitle}"
+                _message.value = "正在同步第 ${index + 1}/${chosen.size} 门课程: ${course.displayTitle}"
                 try {
                     val items = fetchCourse(course)
                     replacement.removeAll { it.courseID == course.id }
@@ -78,16 +79,16 @@ class TeachingStore private constructor(private val context: Context) {
                 }
             }
             
-            val allowedCourseIds = courses.map { it.id }.toSet()
+            val allowedCourseIds = chosen.map { it.id }.toSet()
             val newSnap = _snapshot.value.copy(
-                courses = courses,
+                courses = chosen,
                 items = replacement.filter { allowedCourseIds.contains(it.courseID) },
                 fetchedAt = if (successfulCourses > 0 || chosen.isEmpty()) System.currentTimeMillis() else _snapshot.value.fetchedAt
             )
             saveSnapshot(newSnap)
             _isSignedIn.value = true
         } catch (e: Exception) {
-            _message.value = "Error: ${e.message}"
+            _message.value = "同步失败: ${e.message}"
             if (e is TeachingError.LoginRequired) {
                 _isSignedIn.value = false
             }

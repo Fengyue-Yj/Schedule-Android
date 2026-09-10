@@ -8,7 +8,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,7 +30,8 @@ import kotlinx.coroutines.launch
 fun CourseDetailSheet(
     courseWithMeetings: CourseWithMeetings,
     database: AppDatabase,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenTeachingHub: ((courseId: String) -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
     var isEditing by remember { mutableStateOf(false) }
@@ -260,6 +263,49 @@ fun CourseDetailSheet(
                     Text("Course Color", modifier = Modifier.weight(1f))
                     val color = courseWithMeetings.course.displayColor()
                     Box(modifier = Modifier.size(28.dp, 20.dp).background(color, RoundedCornerShape(6.dp)))
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenTeachingHub?.invoke(courseWithMeetings.course.id) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "教学网作业与课件",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "查看本课程在教学网的作业与资料课件并一键下载",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 

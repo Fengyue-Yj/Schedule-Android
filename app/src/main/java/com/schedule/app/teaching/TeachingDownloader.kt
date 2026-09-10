@@ -1,4 +1,4 @@
-﻿package com.schedule.app.teaching
+package com.schedule.app.teaching
 
 import android.content.ContentValues
 import android.content.Context
@@ -20,6 +20,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
+import android.media.MediaScannerConnection
 import java.nio.charset.StandardCharsets
 
 sealed class DownloadStatus {
@@ -76,22 +77,45 @@ object TeachingDownloader {
             val cookieManager = CookieManager.getInstance()
 
             while (redirectCount < maxRedirects) {
+                // Ensure HTTPS for PKU domains
+                if (currentUrl.startsWith("http://course.pku.edu.cn") || currentUrl.startsWith("http://iaaa.pku.edu.cn")) {
+                    currentUrl = currentUrl.replaceFirst("http://", "https://")
+                }
+
                 val parsedUrl = URL(currentUrl)
                 connection = parsedUrl.openConnection() as HttpURLConnection
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = 15000
                 connection.readTimeout = 30000
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                connection.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Schedule/1.0"
+                )
+                connection.setRequestProperty("Referer", "https://course.pku.edu.cn/")
 
                 // Inject PKU cookies
-                val cookies = cookieManager.getCookie(currentUrl)
-                    ?: cookieManager.getCookie(TeachingURLs.origin)
-                    ?: ""
-                if (cookies.isNotEmpty()) {
-                    connection.setRequestProperty("Cookie", cookies)
+                val specificCookies = cookieManager.getCookie(currentUrl) ?: ""
+                val originCookies = cookieManager.getCookie(TeachingURLs.origin) ?: ""
+                val allCookies = if (specificCookies.isNotBlank() && originCookies.isNotBlank() && specificCookies != originCookies) {
+                    "$originCookies; $specificCookies"
+                } else {
+                    specificCookies.ifBlank { originCookies }
+                }
+                if (allCookies.isNotEmpty()) {
+                    connection.setRequestProperty("Cookie", allCookies)
                 }
 
                 connection.connect()
+
+                // Save any Set-Cookie headers
+                val setCookies = connection.headerFields["Set-Cookie"] ?: connection.headerFields["set-cookie"] ?: emptyList()
+                for (header in setCookies) {
+                    cookieManager.setCookie(currentUrl, header)
+                    cookieManager.setCookie("https://course.pku.edu.cn", header)
+                }
+                if (setCookies.isNotEmpty()) {
+                    cookieManager.flush()
+                }
 
                 val responseCode = connection.responseCode
                 if (responseCode in 300..399) {
@@ -137,8 +161,20 @@ object TeachingDownloader {
                     val buffer = ByteArray(8192)
                     var readBytes = 0L
                     var bytes: Int
+                    var firstChunk = true
 
                     while (input.read(buffer).also { bytes = it } != -1) {
+                        if (firstChunk) {
+                            firstChunk = false
+                            if (contentType?.contains("text/html") == true) {
+                                val sample = String(buffer, 0, minOf(bytes, 2048), StandardCharsets.UTF_8)
+                                if (sample.contains("id=\"loginForm\"") || sample.contains("name=\"password\"") || sample.contains("iaaa.pku.edu.cn")) {
+                                    updateStatus(url, DownloadStatus.Error("登录已过期，请重新登录教学网"))
+                                    return@withContext Result.failure(TeachingError.LoginRequired)
+                                }
+                            }
+                        }
+
                         output.write(buffer, 0, bytes)
                         readBytes += bytes
 
@@ -201,6 +237,7 @@ object TeachingDownloader {
             if (!publicDir.exists()) publicDir.mkdirs()
             val dest = File(publicDir, displayName)
             srcFile.copyTo(dest, overwrite = true)
+            MediaScannerConnection.scanFile(context, arrayOf(dest.absolutePath), arrayOf(resolvedMime), null)
         }
     }
 

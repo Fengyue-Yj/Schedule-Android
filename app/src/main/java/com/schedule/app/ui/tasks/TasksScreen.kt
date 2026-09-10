@@ -1,21 +1,28 @@
 package com.schedule.app.ui.tasks
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.schedule.app.data.AppDatabase
 import com.schedule.app.data.models.*
+import com.schedule.app.teaching.TeachingKind
 import com.schedule.app.ui.components.*
+import com.schedule.app.ui.teaching.TeachingHubScreen
 import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.ui.theme.caption
 import com.schedule.app.ui.theme.rowTitle
@@ -61,6 +68,17 @@ fun TasksScreen(
     database: AppDatabase
 ) {
     val coroutineScope = rememberCoroutineScope()
+    var showTeachingHub by remember { mutableStateOf(false) }
+
+    if (showTeachingHub) {
+        TeachingHubScreen(
+            onNavigateBack = { showTeachingHub = false },
+            term = term,
+            database = database,
+            initialKind = TeachingKind.ASSIGNMENT
+        )
+        return
+    }
     
     var selection by remember { mutableStateOf(TaskSection.ASSIGNMENTS) }
     var activeSheet by remember { mutableStateOf<TaskSheet?>(null) }
@@ -132,14 +150,21 @@ fun TasksScreen(
                                     isFiltered = planFilter != PlanListFilter.ALL,
                                     onSelectionChange = { planFilter = it }
                                 )
-                                TaskSection.ASSIGNMENTS -> TaskFilterMenu(
-                                    label = "Filter Assignments",
-                                    selection = assignmentFilter,
-                                    options = AssignmentFilter.entries.toList(),
-                                    optionTitle = { it.title },
-                                    isFiltered = assignmentFilter != AssignmentFilter.ALL,
-                                    onSelectionChange = { assignmentFilter = it }
-                                )
+                                TaskSection.ASSIGNMENTS -> {
+                                    TaskFilterMenu(
+                                        label = "Filter Assignments",
+                                        selection = assignmentFilter,
+                                        options = AssignmentFilter.entries.toList(),
+                                        optionTitle = { it.title },
+                                        isFiltered = assignmentFilter != AssignmentFilter.ALL,
+                                        onSelectionChange = { assignmentFilter = it }
+                                    )
+                                    HeaderActionButton(
+                                        title = "教学网作业",
+                                        icon = Icons.Default.CloudDownload,
+                                        onClick = { showTeachingHub = true }
+                                    )
+                                }
                                 TaskSection.EXAMS -> TaskFilterMenu(
                                     label = "Filter Exams",
                                     selection = examFilter,
@@ -193,16 +218,80 @@ fun TasksScreen(
                 }
                 TaskSection.ASSIGNMENTS -> {
                     if (sortedAssignments.isEmpty()) {
-                        AppEmptyState(
-                            title = if (assignmentFilter == AssignmentFilter.ALL) "No assignments yet." else "No ${assignmentFilter.title.lowercase()} assignments.",
-                            message = "Tap + to add an assignment.",
-                            systemImage = "checklist"
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            AppEmptyState(
+                                title = if (assignmentFilter == AssignmentFilter.ALL) "暂无作业" else "无${assignmentFilter.title}作业",
+                                message = "可点击右上角「+」手动添加作业，或直接从北大教学网一键同步导入。",
+                                systemImage = "checklist"
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { showTeachingHub = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.accent),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("⚡ 从北大教学网一键导入作业", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(AppTheme.Spacing.row),
                             contentPadding = PaddingValues(top = 6.dp, bottom = 100.dp)
                         ) {
+                            item {
+                                Surface(
+                                    onClick = { showTeachingHub = true },
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = AppTheme.colors.accent.copy(alpha = 0.08f),
+                                    border = BorderStroke(
+                                        0.8.dp,
+                                        AppTheme.colors.accent.copy(alpha = 0.25f)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CloudDownload,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.accent,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "北大教学网作业同步",
+                                                style = AppTheme.typography.caption.copy(fontWeight = FontWeight.SemiBold),
+                                                color = AppTheme.colors.accent
+                                            )
+                                            Text(
+                                                text = "点击一键拉取教学网最新作业与截止时间",
+                                                style = AppTheme.typography.caption,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.accent.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                             items(sortedAssignments) { item ->
                                 val course = courses.find { it.id == item.courseId }
                                 AssignmentRow(

@@ -114,7 +114,9 @@ object TeachingURLs {
 }
 
 sealed class TeachingError(message: String) : Exception(message) {
-    object LoginRequired : TeachingError("Login required")
-    object UnexpectedPage : TeachingError("Unexpected page format")
+    object LoginRequired : TeachingError("登录已过期，请重新连接教学网")
+    object UnexpectedPage : TeachingError("教学网页面结构未能识别")
+    object FileUnavailable : TeachingError("教学网返回了网页而非文件内容，请在原页面查看")
+    object UntrustedURL : TeachingError("链接不在北大受信任域名内")
     class NetworkError(message: String) : TeachingError(message)
 }

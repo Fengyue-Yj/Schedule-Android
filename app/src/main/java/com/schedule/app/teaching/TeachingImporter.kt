@@ -1,4 +1,4 @@
-﻿package com.schedule.app.teaching
+package com.schedule.app.teaching
 
 import com.schedule.app.data.AppDatabase
 import com.schedule.app.data.models.AssignmentEntity
@@ -22,7 +22,13 @@ object TeachingImporter {
     ) = withContext(Dispatchers.IO) {
         val dao = database.assignmentDao()
         val existing = dao.findBySourceId(item.id)
-        val targetDueDate = chosenDate ?: item.dueDate ?: System.currentTimeMillis()
+        val defaultDue = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 23)
+            set(java.util.Calendar.MINUTE, 59)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val targetDueDate = chosenDate ?: item.dueDate ?: defaultDue
 
         if (existing != null) {
             val updated = existing.copy(

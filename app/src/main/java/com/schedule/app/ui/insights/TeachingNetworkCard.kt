@@ -31,10 +31,10 @@ fun TeachingNetworkCard(
     val snapshot by store.snapshot.collectAsState()
 
     val subtitle = if (isSignedIn) {
-        val unreadCount = snapshot.items.count { it.readKey !in snapshot.readKeys }
-        "$unreadCount unread notices · assignments & materials"
+        val courseCount = snapshot.courses.size
+        "已连接 · ${courseCount}门课程 · 成绩、作业与课件"
     } else {
-        "Connect notices, assignments and course files"
+        "同步成绩、课程作业与课件资料"
     }
 
     Card(
@@ -64,7 +64,7 @@ fun TeachingNetworkCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "PKU Teaching Network",
+                    text = "北大教学网",
                     style = AppTheme.typography.cardTitle,
                     fontWeight = FontWeight.SemiBold
                 )

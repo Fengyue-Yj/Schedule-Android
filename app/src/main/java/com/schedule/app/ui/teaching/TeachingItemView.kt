@@ -59,7 +59,6 @@ fun TeachingItemView(
     var isImported by remember { mutableStateOf(false) }
     var courses by remember { mutableStateOf<List<CourseEntity>>(emptyList()) }
     var selectedCourseId by remember { mutableStateOf<String?>(null) }
-    var expandedCourseMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(itemId, term, database) {
         if (term != null && database != null && item != null) {
@@ -169,6 +168,50 @@ fun TeachingItemView(
                     }
                 }
 
+                // Grade information card
+                if (item.kind == TeachingKind.GRADE) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("成绩详情", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val scoreDisplay = item.score ?: item.gradeStatus ?: "未出分"
+                                Text(
+                                    text = scoreDisplay,
+                                    style = MaterialTheme.typography.headlineLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                if (!item.pointsPossible.isNullOrBlank()) {
+                                    Text(
+                                        text = "满分: ${item.pointsPossible}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                }
+                            }
+                            if (!item.gradeCategory.isNullOrBlank()) {
+                                Text("考核类别: ${item.gradeCategory}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (!item.feedback.isNullOrBlank()) {
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                                Text("💬 教师评语: ${item.feedback}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+
                 // Due date
                 if (item.dueDate != null) {
                     Card(
@@ -200,9 +243,10 @@ fun TeachingItemView(
                 // Body content
                 if (item.body.isNotBlank()) {
                     val sectionTitle = when (item.kind) {
-                        TeachingKind.ANNOUNCEMENT -> "通知内容"
+                        TeachingKind.GRADE -> "成绩说明 / 反馈"
                         TeachingKind.ASSIGNMENT -> "作业说明"
                         TeachingKind.MATERIAL -> "资料说明"
+                        TeachingKind.ANNOUNCEMENT -> "通知内容"
                     }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -230,7 +274,7 @@ fun TeachingItemView(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("导入至待办作业", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("添加到待办区", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 if (isImported) {
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
@@ -257,38 +301,17 @@ fun TeachingItemView(
                                 }
                             }
 
-                            // Course Link Picker
-                            Box {
-                                OutlinedButton(
-                                    onClick = { expandedCourseMenu = true },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    val matchedCourse = courses.find { it.id == selectedCourseId }
-                                    val text = if (matchedCourse != null) "关联课程: ${matchedCourse.name}" else "关联课程: 未关联 (点击选择)"
-                                    Text(text)
-                                }
-                                DropdownMenu(
-                                    expanded = expandedCourseMenu,
-                                    onDismissRequest = { expandedCourseMenu = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("不关联课程") },
-                                        onClick = {
-                                            selectedCourseId = null
-                                            expandedCourseMenu = false
-                                        }
-                                    )
-                                    courses.forEach { course ->
-                                        DropdownMenuItem(
-                                            text = { Text(course.name) },
-                                            onClick = {
-                                                selectedCourseId = course.id
-                                                expandedCourseMenu = false
-                                            }
-                                        )
-                                    }
-                                }
+                            val matchedCourse = courses.find { it.id == selectedCourseId }
+                            val courseLabel = if (matchedCourse != null) {
+                                "所属课程: ${item.displayCourseTitle} (已自动关联本地课表: ${matchedCourse.name})"
+                            } else {
+                                "所属课程: ${item.displayCourseTitle}"
                             }
+                            Text(
+                                text = courseLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
 
                             Button(
                                 onClick = {
@@ -301,12 +324,12 @@ fun TeachingItemView(
                                             database = database
                                         )
                                         isImported = true
-                                        snackbarHostState.showSnackbar("已成功导入作业「${item.title}」至待办列表！")
+                                        snackbarHostState.showSnackbar("已成功添加作业「${item.title}」至待办列表！")
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(if (isImported) "更新待办作业" else "一键导入作业")
+                                Text(if (isImported) "更新待办作业" else "一键加入待办")
                             }
                         }
                     }

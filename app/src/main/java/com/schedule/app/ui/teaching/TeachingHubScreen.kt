@@ -168,12 +168,14 @@ fun TeachingHubScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = TeachingKind.entries.indexOf(selectedKind)) {
-                TeachingKind.entries.forEach { kind ->
+            val displayedKinds = listOf(TeachingKind.GRADE, TeachingKind.ASSIGNMENT, TeachingKind.MATERIAL)
+            TabRow(selectedTabIndex = displayedKinds.indexOf(selectedKind).coerceAtLeast(0)) {
+                displayedKinds.forEach { kind ->
                     val title = when (kind) {
-                        TeachingKind.ANNOUNCEMENT -> "通知"
+                        TeachingKind.GRADE -> "成绩"
                         TeachingKind.ASSIGNMENT -> "作业"
                         TeachingKind.MATERIAL -> "资料课件"
+                        TeachingKind.ANNOUNCEMENT -> "通知"
                     }
                     Tab(
                         selected = selectedKind == kind,
@@ -266,9 +268,10 @@ fun TeachingHubScreen(
                     ) {
                         Text(
                             text = "暂无${when(selectedKind) {
-                                TeachingKind.ANNOUNCEMENT -> "通知"
+                                TeachingKind.GRADE -> "成绩"
                                 TeachingKind.ASSIGNMENT -> "作业"
                                 TeachingKind.MATERIAL -> "资料课件"
+                                TeachingKind.ANNOUNCEMENT -> "通知"
                             }}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -522,6 +525,14 @@ fun TeachingHubScreen(
                                                 snackbarHostState.showSnackbar(msg)
                                             }
                                         }
+                                    }
+                                )
+                            }
+                            TeachingKind.GRADE -> {
+                                GradeCard(
+                                    item = item,
+                                    onOpenDetail = {
+                                        selectedItemId = item.id
                                     }
                                 )
                             }
@@ -862,6 +873,166 @@ private fun AnnouncementCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GradeCard(
+    item: TeachingItem,
+    onOpenDetail: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenDetail() },
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = item.displayCourseTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!item.gradeCategory.isNullOrBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                            ) {
+                                Text(
+                                    text = item.gradeCategory,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                // Score Badge
+                val hasScore = !item.score.isNullOrBlank()
+                val isPending = item.gradeStatus == "待评分" || item.score == "待评分"
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = when {
+                        isPending -> MaterialTheme.colorScheme.tertiaryContainer
+                        hasScore -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (isPending) {
+                            Text(
+                                text = "待评分",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        } else if (hasScore) {
+                            Text(
+                                text = item.score!!,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (!item.pointsPossible.isNullOrBlank()) {
+                                Text(
+                                    text = " / ${item.pointsPossible}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "未出分",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Feedback snippet if present
+            if (!item.feedback.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "💬 教师评语: ${item.feedback}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // Footer: Date and details hint
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
+                val dateDisplay = when {
+                    pubTime != null -> DateFormatUtil.formatDateTime(pubTime)
+                    !item.publishedText.isNullOrBlank() -> item.publishedText
+                    else -> null
+                }
+                if (dateDisplay != null) {
+                    Text(
+                        text = "活动时间: $dateDisplay",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                } else {
+                    Spacer(Modifier.width(1.dp))
+                }
+
+                Text(
+                    text = "查看详情 ▾",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

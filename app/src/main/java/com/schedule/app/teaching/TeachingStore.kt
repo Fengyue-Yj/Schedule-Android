@@ -100,79 +100,100 @@ class TeachingStore private constructor(private val context: Context) {
 
     val unreadCount: Int
         get() = _snapshot.value.items.count {
-            it.kind == TeachingKind.ANNOUNCEMENT &&
+            it.kind == TeachingKind.GRADE &&
             !_snapshot.value.readKeys.contains(it.id) &&
             !_snapshot.value.readKeys.contains(it.itemReadKey)
         }
 
     private suspend fun fetchCourse(course: TeachingCourse): List<TeachingItem> {
-        // 1. Try Blackboard Learn REST API for announcements first
-        val apiJson = session.getOrNull(TeachingURLs.announcementsApi(course.id))
-        val apiAnnouncements = if (!apiJson.isNullOrBlank()) {
-            TeachingParser.parseApiAnnouncements(apiJson, course)
-        } else {
-            emptyList()
-        }
+        val result = mutableListOf<TeachingItem>()
 
-        // 2. Fetch course HTML page
-        val courseHtml = session.get(TeachingURLs.course(course.id))
-        var htmlAnnouncements = TeachingParser.parseAnnouncements(courseHtml, course)
-        if (htmlAnnouncements.isEmpty()) {
-            val menuAnnounceUrl = TeachingParser.parseAnnouncementUrl(courseHtml, course.id)
-            if (menuAnnounceUrl != null && menuAnnounceUrl != TeachingURLs.course(course.id)) {
-                try {
-                    val announceHtml = session.get(menuAnnounceUrl)
-                    htmlAnnouncements = TeachingParser.parseAnnouncements(announceHtml, course)
-                } catch (_: Exception) {}
+        // 1. Fetch grades for this course (non-fatal try-catch)
+        try {
+            // A. Try REST API for grades
+            val colJson = session.getOrNull(TeachingURLs.gradebookColumnsApi(course.id))
+            val userGradesJson = session.getOrNull(TeachingURLs.gradesApi(course.id))
+            val apiGrades = if (!colJson.isNullOrBlank() && !userGradesJson.isNullOrBlank()) {
+                TeachingParser.parseApiGrades(colJson, userGradesJson, course)
+            } else {
+                emptyList()
             }
-        }
 
-        // Merge API & HTML announcements
-        val announcements = if (apiAnnouncements.isNotEmpty()) {
-            val seenTitles = apiAnnouncements.map { it.title }.toSet()
-            apiAnnouncements + htmlAnnouncements.filter { !seenTitles.contains(it.title) }
-        } else {
-            htmlAnnouncements
-        }
-        val result = announcements.toMutableList()
-        val roots = TeachingParser.parseRoots(courseHtml)
-        val queue = ArrayDeque(roots)
-        val visited = mutableSetOf<String>()
-        val seenItemIds = result.map { it.id }.toMutableSet()
+            // B. Fetch grades HTML page
+            val courseHtml = session.get(TeachingURLs.course(course.id))
+            val gradesUrl = TeachingParser.parseGradesUrl(courseHtml, course.id)
+            val gradesHtml = if (gradesUrl == TeachingURLs.course(course.id)) courseHtml else session.get(gradesUrl)
+            val htmlGrades = TeachingParser.parseGrades(gradesHtml, course)
 
-        while (queue.isNotEmpty()) {
-            val id = queue.removeFirst()
-            if (!visited.add(id)) continue
-            if (visited.size > 150) break
-
-            val contentHtml = session.get(TeachingURLs.content(course.id, id))
-            val page = TeachingParser.parseContents(contentHtml, course)
-            for (f in page.folders) {
-                if (!visited.contains(f)) {
-                    queue.add(f)
+            // Merge API and HTML grades
+            val mergedGrades = mutableListOf<TeachingItem>()
+            val seenGradeTitles = mutableSetOf<String>()
+            for (g in htmlGrades) {
+                seenGradeTitles.add(g.title.trim())
+                mergedGrades.add(g)
+            }
+            for (g in apiGrades) {
+                if (!seenGradeTitles.contains(g.title.trim())) {
+                    mergedGrades.add(g)
                 }
             }
-            for (item in page.items) {
-                if (seenItemIds.add(item.id)) {
-                    var finalItem = item
-                    if (item.kind == TeachingKind.ASSIGNMENT) {
-                        try {
-                            val assignHtml = session.get(TeachingURLs.assignment(course.id, item.contentID))
-                            val (dueDate, raw) = TeachingParser.parseDeadline(assignHtml)
-                            finalItem = finalItem.copy(dueDate = dueDate, dueDateText = raw)
-                        } catch (e: Exception) {
-                            // ignore deadline fetch error
-                        }
+            result.addAll(mergedGrades)
+        } catch (e: Exception) {
+            if (e is TeachingError.LoginRequired) throw e
+            e.printStackTrace()
+        }
+
+        // 2. Fetch Assignments and Materials
+        try {
+            val courseHtml = session.get(TeachingURLs.course(course.id))
+            val roots = TeachingParser.parseRoots(courseHtml)
+            val queue = ArrayDeque(roots)
+            val visited = mutableSetOf<String>()
+            val seenItemIds = result.map { it.id }.toMutableSet()
+
+            while (queue.isNotEmpty()) {
+                val id = queue.removeFirst()
+                if (!visited.add(id)) continue
+                if (visited.size > 150) break
+
+                val contentHtml = session.get(TeachingURLs.content(course.id, id))
+                val page = TeachingParser.parseContents(contentHtml, course)
+                for (f in page.folders) {
+                    if (!visited.contains(f)) {
+                        queue.add(f)
                     }
-                    result.add(finalItem)
+                }
+                for (item in page.items) {
+                    if (seenItemIds.add(item.id)) {
+                        var finalItem = item
+                        if (item.kind == TeachingKind.ASSIGNMENT) {
+                            try {
+                                val assignHtml = session.get(TeachingURLs.assignment(course.id, item.contentID))
+                                val (dueDate, raw) = TeachingParser.parseDeadline(assignHtml)
+                                if (dueDate != null) {
+                                    finalItem = finalItem.copy(dueDate = dueDate, dueDateText = raw)
+                                } else if (finalItem.dueDate == null && raw != null) {
+                                    finalItem = finalItem.copy(dueDateText = raw)
+                                }
+                            } catch (e: Exception) {
+                                // ignore deadline fetch error
+                            }
+                        }
+                        result.add(finalItem)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            if (e is TeachingError.LoginRequired) throw e
+            e.printStackTrace()
         }
+
         return result
     }
 
     suspend fun refreshIfNeeded() {
-        if (_snapshot.value.items.isEmpty() || System.currentTimeMillis() - _snapshot.value.fetchedAt > 1000 * 60 * 60) {
+        val hasNoGrades = _snapshot.value.courses.isNotEmpty() && _snapshot.value.items.none { it.kind == TeachingKind.GRADE }
+        if (_snapshot.value.items.isEmpty() || hasNoGrades || System.currentTimeMillis() - _snapshot.value.fetchedAt > 1000 * 60 * 60) {
             refresh()
         } else {
             _isSignedIn.value = session.isLoggedIn()
@@ -188,7 +209,7 @@ class TeachingStore private constructor(private val context: Context) {
     fun markAllAnnouncementsRead() {
         val keys = _snapshot.value.readKeys.toMutableSet()
         for (item in _snapshot.value.items) {
-            if (item.kind == TeachingKind.ANNOUNCEMENT) {
+            if (item.kind == TeachingKind.GRADE || item.kind == TeachingKind.ANNOUNCEMENT) {
                 keys.add(item.id)
                 keys.add(item.itemReadKey)
             }

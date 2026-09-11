@@ -33,7 +33,21 @@ fun InsightsScreen(
     val assignments by database.assignmentDao().getByTermId(termId).collectAsState(initial = emptyList())
     val exams by database.examDao().getByTermId(termId).collectAsState(initial = emptyList())
     val courses by database.courseDao().getByTermId(termId).collectAsState(initial = emptyList())
+    val allCourses by database.courseDao().getAll().collectAsState(initial = emptyList())
     val plans by database.flexiblePlanDao().getByTermId(termId).collectAsState(initial = emptyList())
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val teachingStore = remember { com.schedule.app.teaching.TeachingStore.getInstance(context) }
+    val teachingSnapshot by teachingStore.snapshot.collectAsState()
+
+    val displayCourseCount = remember(courses, allCourses, teachingSnapshot.courses) {
+        when {
+            courses.isNotEmpty() -> courses.size
+            allCourses.isNotEmpty() -> allCourses.size
+            teachingSnapshot.courses.isNotEmpty() -> teachingSnapshot.courses.size
+            else -> 0
+        }
+    }
 
     val events = remember(assignments, exams) {
         UpcomingEvent.collect(assignments, exams)
@@ -77,7 +91,7 @@ fun InsightsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         MetricsRow(
-            coursesCount = courses.size,
+            coursesCount = displayCourseCount,
             completedAssignments = completedAssignments,
             totalAssignments = assignments.size,
             completedExams = completedExams,

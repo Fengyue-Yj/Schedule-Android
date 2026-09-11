@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CourseDao {
-    @Query("SELECT * FROM courses WHERE termId = :termId ORDER BY createdAt ASC")
+    @Query("SELECT * FROM courses WHERE termId = :termId OR (:termId IS NULL AND termId IS NULL) ORDER BY createdAt ASC")
     fun getByTermId(termId: String?): Flow<List<CourseEntity>>
+
+    @Query("SELECT * FROM courses ORDER BY createdAt ASC")
+    fun getAll(): Flow<List<CourseEntity>>
 
     @Query("SELECT * FROM courses WHERE termId = :termId ORDER BY createdAt ASC")
     suspend fun getCoursesForTerm(termId: String): List<CourseEntity>

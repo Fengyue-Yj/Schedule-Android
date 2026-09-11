@@ -4,9 +4,10 @@ import java.net.URL
 import java.util.Date
 
 enum class TeachingKind(val title: String) {
-    ANNOUNCEMENT("Notices"),
-    ASSIGNMENT("Assignments"),
-    MATERIAL("Materials")
+    GRADE("成绩"),
+    ASSIGNMENT("作业"),
+    MATERIAL("资料课件"),
+    ANNOUNCEMENT("通知")
 }
 
 data class TeachingCourse(
@@ -57,8 +58,13 @@ data class TeachingItem(
     val publishedText: String? = null,
     val publishedAt: Long? = null,
     val sourceURL: String,
-    val attachments: List<TeachingAttachment>,
+    val attachments: List<TeachingAttachment> = emptyList(),
     val readKey: String = "",
+    val score: String? = null,
+    val pointsPossible: String? = null,
+    val gradeCategory: String? = null,
+    val feedback: String? = null,
+    val gradeStatus: String? = null
 ) {
     val displayCourseTitle: String
         get() = courseTitle.replace(Regex("\\(.*?\\)"), "").trim()
@@ -100,6 +106,9 @@ object TeachingURLs {
     fun announcementsApi(courseId: String) = "$origin/learn/api/public/v1/courses/$courseId/announcements?limit=100"
     fun content(courseId: String, contentId: String) = "$origin/webapps/blackboard/content/listContent.jsp?course_id=$courseId&content_id=$contentId"
     fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?action=newAttempt&course_id=$courseId&content_id=$contentId"
+    fun grades(courseId: String) = "$origin/webapps/bb-mygrades-BBLEARN/myGrades.jsp?course_id=$courseId&stream_name=mygrades"
+    fun gradesApi(courseId: String) = "$origin/learn/api/public/v2/courses/$courseId/gradebook/users/me"
+    fun gradebookColumnsApi(courseId: String) = "$origin/learn/api/public/v2/courses/$courseId/gradebook/columns"
     
     fun trusted(url: String): Boolean {
         val uri = try { java.net.URI(url) } catch (e: Exception) { return false }

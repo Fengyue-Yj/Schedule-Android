@@ -296,6 +296,22 @@ object TeachingParser {
                 attachments.add(TeachingAttachment(title, url))
             }
             
+            var initialDueDate: Long? = null
+            var initialDueDateText: String? = null
+            if (assignment) {
+                val rowText = row.text()
+                val deadlineRegex = Regex("""(?:截止时间|截止日期|到期时间|到期|Due Date|Due)[:：]?\s*([0-9]{4}[年\-/\.][^\n\r<，,；;]{4,30})""")
+                val m = deadlineRegex.find(rowText)
+                if (m != null) {
+                    val candidate = m.groupValues[1].trim()
+                    val parsed = parseDate(candidate)
+                    if (parsed != null) {
+                        initialDueDate = parsed.time
+                        initialDueDateText = candidate
+                    }
+                }
+            }
+
             items.add(
                 TeachingItem(
                     id = "${course.id}:$id",
@@ -305,6 +321,8 @@ object TeachingParser {
                     kind = if (assignment) TeachingKind.ASSIGNMENT else TeachingKind.MATERIAL,
                     title = title,
                     body = body,
+                    dueDate = initialDueDate,
+                    dueDateText = initialDueDateText,
                     sourceURL = if (assignment) TeachingURLs.assignment(course.id, id) else (url ?: TeachingURLs.content(course.id, id)),
                     attachments = attachments
                 )
@@ -313,12 +331,263 @@ object TeachingParser {
         return ContentPage(items = items, folders = folders)
     }
 
+    fun parseGradesUrl(html: String, courseId: String): String {
+        val doc = Jsoup.parse(html)
+        val link = doc.select("#courseMenuPalette_contents li a, #courseMenuPalette_div li a, a.courseMenuLink").firstOrNull {
+            val text = it.text().trim()
+            val href = it.attr("href")
+            text.contains("成绩") || text.contains("我的成绩") || text.contains("Grades", ignoreCase = true) || text.contains("My Grades", ignoreCase = true) || href.contains("myGrades.jsp")
+        }
+        return link?.attr("href")?.let { TeachingURLs.resolve(it) } ?: TeachingURLs.grades(courseId)
+    }
+
+    fun parseGrades(html: String, course: TeachingCourse): List<TeachingItem> {
+        if (isLogin(html)) throw TeachingError.LoginRequired
+        val doc = Jsoup.parse(html)
+        val result = mutableListOf<TeachingItem>()
+        val seen = mutableSetOf<String>()
+
+        val rows = doc.select("div.sortable_item_row, div.graded_item_row, #grades_wrapper div.row, table#gradesTable tbody tr, div.mygrades-table div.row")
+        for (row in rows) {
+            val titleEl = row.select("div.cell.gradable, .itemCat, a.itemCat, a.entryLink, td.cell.gradable, h3, h4, .title").firstOrNull() ?: continue
+            val title = titleEl.text().trim()
+            if (title.isEmpty() || title == "成绩" || title == "我的成绩" || title == "My Grades") continue
+
+            val catEl = row.select("div.itemCat, span.itemCat, .category, span.itemCategory").firstOrNull()
+            var category = catEl?.text()?.trim()
+            if (category.isNullOrEmpty()) {
+                val candidateCat = row.select("div.info, div.type, span.type, span.category").firstOrNull {
+                    val t = it.text()
+                    t.contains("类别") || t.contains("Type") || t.contains("Category")
+                }
+                category = candidateCat?.text()?.substringAfter(":")?.trim()
+            }
+
+            val gradeEl = row.select("div.cell.grade, span.grade, span.pointsEarned, .grade, td.grade").firstOrNull()
+            val pointsPossibleEl = row.select("span.pointsPossible, .pointsPossible, span.outOf, .total").firstOrNull()
+
+            var rawScoreText = gradeEl?.text()?.trim() ?: ""
+            var pointsPossible = pointsPossibleEl?.text()?.trim()?.removePrefix("/")?.removePrefix("共")?.removePrefix("out of")?.trim()
+
+            if (rawScoreText.contains("/")) {
+                val parts = rawScoreText.split("/")
+                rawScoreText = parts[0].trim()
+                if (pointsPossible.isNullOrEmpty() && parts.size > 1) {
+                    pointsPossible = parts[1].trim()
+                }
+            }
+
+            val needsGrading = row.select("img[alt*='需要评分'], img[alt*='Needs Grading'], span[title*='需要评分'], span[title*='Needs Grading'], .needsGrading").isNotEmpty()
+
+            val (score, status) = when {
+                needsGrading -> Pair("待评分", "待评分")
+                rawScoreText.contains("需要评分") || rawScoreText.contains("Needs Grading") -> Pair("待评分", "待评分")
+                rawScoreText == "-" || rawScoreText == "--" || rawScoreText.isEmpty() -> Pair(null, "未出分")
+                else -> Pair(rawScoreText, "已评分")
+            }
+
+            val dateEl = row.select("div.cell.date, div.timestamp, span.timestamp, div.activityDate, div.lastActivity, .date").firstOrNull()
+            var dateText = dateEl?.text()?.trim()
+            if (dateText.isNullOrEmpty()) {
+                val candidateDate = row.select("span, div").firstOrNull {
+                    val t = it.text().trim()
+                    t.contains("提交时间") || t.contains("活动时间") || t.contains("Submitted") || t.contains("Graded on")
+                }
+                dateText = candidateDate?.text()?.trim()
+            }
+            val dateTimestamp = dateText?.let { parseDate(it)?.time }
+
+            val feedbackEl = row.select("div.comment, div.comments, div.feedback, div.evalFeedback, a[title*='反馈'], a[title*='Feedback']").firstOrNull()
+            var feedbackText = feedbackEl?.text()?.trim()?.removePrefix("教师评语:")?.removePrefix("Instructor Feedback:")?.trim()
+            if (feedbackText.isNullOrEmpty()) {
+                val feedbackTitle = feedbackEl?.attr("title")?.takeIf { it.isNotBlank() && !it.contains("查看") }
+                feedbackText = feedbackTitle
+            }
+
+            val linkHref = titleEl.attr("href").ifBlank { titleEl.select("a").attr("href") }
+            val sourceURL = if (linkHref.isNotBlank()) {
+                TeachingURLs.resolve(linkHref) ?: TeachingURLs.grades(course.id)
+            } else {
+                TeachingURLs.grades(course.id)
+            }
+
+            val rawID = row.id().ifEmpty { titleEl.id() }
+            val itemID = if (rawID.isNotEmpty()) rawID else TeachingURLs.digest(course.id + title + (category ?: ""))
+
+            if (seen.add(itemID)) {
+                result.add(
+                    TeachingItem(
+                        id = "${course.id}:grade:$itemID",
+                        courseID = course.id,
+                        courseTitle = course.title,
+                        contentID = itemID,
+                        kind = TeachingKind.GRADE,
+                        title = title,
+                        body = feedbackText ?: (if (category != null) "类别: $category" else ""),
+                        dueDate = null,
+                        dueDateText = null,
+                        publishedText = dateText,
+                        publishedAt = dateTimestamp,
+                        sourceURL = sourceURL,
+                        attachments = emptyList(),
+                        score = score,
+                        pointsPossible = pointsPossible,
+                        gradeCategory = category,
+                        feedback = feedbackText,
+                        gradeStatus = status
+                    )
+                )
+            }
+        }
+
+        return result
+    }
+
+    fun parseApiGrades(columnsJson: String?, usersMeJson: String?, course: TeachingCourse): List<TeachingItem> {
+        if (columnsJson.isNullOrBlank() || usersMeJson.isNullOrBlank()) return emptyList()
+        val result = mutableListOf<TeachingItem>()
+        try {
+            val gson = Gson()
+            val colObj = gson.fromJson(columnsJson, com.google.gson.JsonObject::class.java)
+            val userObj = gson.fromJson(usersMeJson, com.google.gson.JsonObject::class.java)
+
+            val colArray = colObj?.getAsJsonArray("results") ?: return emptyList()
+            val userArray = userObj?.getAsJsonArray("results") ?: return emptyList()
+
+            val columnsMap = mutableMapOf<String, com.google.gson.JsonObject>()
+            for (colElem in colArray) {
+                if (colElem.isJsonObject) {
+                    val c = colElem.asJsonObject
+                    val cid = c.get("id")?.asString
+                    if (!cid.isNullOrEmpty()) {
+                        columnsMap[cid] = c
+                    }
+                }
+            }
+
+            for (gradeElem in userArray) {
+                if (!gradeElem.isJsonObject) continue
+                val g = gradeElem.asJsonObject
+                val columnId = g.get("columnId")?.asString ?: continue
+                val col = columnsMap[columnId] ?: continue
+
+                val title = col.get("name")?.asString?.trim() ?: continue
+                val possibleScore = col.getAsJsonObject("score")?.get("possible")?.asDouble
+                val pointsPossible = possibleScore?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }
+
+                val rawScore = g.get("score")?.asDouble
+                val scoreText = g.get("text")?.asString?.trim()
+                val statusStr = g.get("status")?.asString
+                val feedback = g.get("feedback")?.asString?.trim()
+                val gradedDateStr = g.get("graded")?.asString
+                val gradedTimestamp = gradedDateStr?.let { parseDate(it)?.time }
+
+                val finalScore = when {
+                    statusStr.equals("NeedsGrading", ignoreCase = true) -> "待评分"
+                    !scoreText.isNullOrEmpty() -> scoreText
+                    rawScore != null -> if (rawScore % 1.0 == 0.0) rawScore.toInt().toString() else rawScore.toString()
+                    else -> null
+                }
+
+                val finalStatus = when {
+                    statusStr.equals("NeedsGrading", ignoreCase = true) -> "待评分"
+                    finalScore != null -> "已评分"
+                    else -> "未出分"
+                }
+
+                result.add(
+                    TeachingItem(
+                        id = "${course.id}:grade:$columnId",
+                        courseID = course.id,
+                        courseTitle = course.title,
+                        contentID = columnId,
+                        kind = TeachingKind.GRADE,
+                        title = title,
+                        body = feedback ?: "",
+                        publishedText = gradedDateStr,
+                        publishedAt = gradedTimestamp,
+                        sourceURL = TeachingURLs.grades(course.id),
+                        score = finalScore,
+                        pointsPossible = pointsPossible,
+                        gradeCategory = null,
+                        feedback = feedback,
+                        gradeStatus = finalStatus
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
+    }
+
     fun parseDeadline(html: String): Pair<Long?, String?> {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
-        val text = doc.select("#assignMeta2 + div").firstOrNull()?.text()?.trim()
-        val date = text?.let { parseDate(it)?.time }
-        return Pair(date, text)
+
+        // 1. Blackboard classic metadata div selectors
+        val metaSelectors = listOf(
+            "#assignMeta2 + div",
+            "#assignMeta1 + div",
+            "#assignMeta + div",
+            "div[id^='assignMeta'] + div",
+            "#dueDate",
+            "span#dueDate",
+            "div.dueDate",
+            "span.dueDate",
+            "span.activityDate"
+        )
+        for (sel in metaSelectors) {
+            val el = doc.select(sel).firstOrNull()
+            val text = el?.text()?.trim()
+            if (!text.isNullOrEmpty()) {
+                val d = parseDate(text)
+                if (d != null) {
+                    return Pair(d.time, text)
+                }
+            }
+        }
+
+        // 2. Table rows / metadata items with label
+        val labelSelectors = listOf(
+            "tr:contains(截止日期) td",
+            "tr:contains(截止时间) td",
+            "tr:contains(到期时间) td",
+            "tr:contains(到期) td",
+            "tr:contains(Due Date) td",
+            "tr:contains(Due) td",
+            "div.metadataItem:contains(截止)",
+            "div.metadataItem:contains(到期)",
+            "div.metadataItem:contains(Due)",
+            "li:contains(截止日期)",
+            "li:contains(截止时间)",
+            "p:contains(截止日期)",
+            "p:contains(截止时间)"
+        )
+        for (sel in labelSelectors) {
+            val elements = doc.select(sel)
+            for (el in elements) {
+                val raw = el.text().trim()
+                val parsed = parseDate(raw)
+                if (parsed != null) {
+                    return Pair(parsed.time, raw)
+                }
+            }
+        }
+
+        // 3. Fallback: Regex scan across text of assignment container / entire body
+        val bodyText = doc.body()?.text() ?: ""
+        val deadlineRegex = Regex("""(?:截止时间|截止日期|到期时间|到期|Due Date|Due)[:：]?\s*([0-9]{4}[年\-/][^\n\r<，,；;]{4,30})""")
+        val m = deadlineRegex.find(bodyText)
+        if (m != null) {
+            val candidate = m.groupValues[1].trim()
+            val parsed = parseDate(candidate)
+            if (parsed != null) {
+                return Pair(parsed.time, candidate)
+            }
+        }
+
+        return Pair(null, null)
     }
 
     private fun parseAttachments(element: Element): List<TeachingAttachment> {
@@ -367,24 +636,54 @@ object TeachingParser {
             } catch (_: Exception) {}
         }
 
-        // 3. Extract date pattern like 2024-09-01 10:00:00 or 2024/09/01 10:00 from string
-        val stdDateRegex = Regex("""(\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)""")
+        // Chinese date without time (e.g. 2024年10月15日) -> default to 23:59:59 for deadlines
+        val chineseDateOnly = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日""")
+        val mDateOnly = chineseDateOnly.find(normalized)
+        if (mDateOnly != null) {
+            try {
+                val year = mDateOnly.groupValues[1].toInt()
+                val month = mDateOnly.groupValues[2].toInt()
+                val day = mDateOnly.groupValues[3].toInt()
+                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+                cal.set(year, month - 1, day, 23, 59, 0)
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                return cal.time
+            } catch (_: Exception) {}
+        }
+
+        // 3. Extract date pattern like 2024-09-01 10:00:00 or 2024/09/01 10:00 or 2024.09.01 10:00
+        val stdDateRegex = Regex("""(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)""")
         val stdMatch = stdDateRegex.find(normalized)
         if (stdMatch != null) {
             val candidate = stdMatch.groupValues[1]
             val formats = listOf(
                 "yyyy-MM-dd HH:mm:ss",
                 "yyyy/MM/dd HH:mm:ss",
+                "yyyy.MM.dd HH:mm:ss",
                 "yyyy-MM-dd HH:mm",
                 "yyyy/MM/dd HH:mm",
+                "yyyy.MM.dd HH:mm",
                 "yyyy-MM-dd",
-                "yyyy/MM/dd"
+                "yyyy/MM/dd",
+                "yyyy.MM.dd"
             )
             for (format in formats) {
                 try {
                     val sdf = SimpleDateFormat(format, Locale.US)
                     sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
-                    return sdf.parse(candidate)
+                    val parsed = sdf.parse(candidate)
+                    if (parsed != null) {
+                        // If format is date-only without time, default to 23:59
+                        if (!format.contains("HH")) {
+                            val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+                            cal.time = parsed
+                            cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                            cal.set(java.util.Calendar.MINUTE, 59)
+                            cal.set(java.util.Calendar.SECOND, 0)
+                            return cal.time
+                        }
+                        return parsed
+                    }
                 } catch (_: Exception) {}
             }
         }

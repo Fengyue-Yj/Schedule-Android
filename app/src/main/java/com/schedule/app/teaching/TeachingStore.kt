@@ -220,11 +220,17 @@ class TeachingStore private constructor(private val context: Context) {
     }
 
     suspend fun refreshIfNeeded() {
+        if (!session.isLoggedIn()) {
+            _isSignedIn.value = false
+            return
+        }
         val hasNoGrades = _snapshot.value.courses.isNotEmpty() && _snapshot.value.items.none { it.kind == TeachingKind.GRADE }
-        if (_snapshot.value.items.isEmpty() || hasNoGrades || System.currentTimeMillis() - _snapshot.value.fetchedAt > 1000 * 60 * 60) {
+        // Match original iOS: 300 seconds (5 minutes) cache TTL
+        val isCacheStale = System.currentTimeMillis() - _snapshot.value.fetchedAt > 300_000L
+        if (_snapshot.value.items.isEmpty() || hasNoGrades || isCacheStale) {
             refresh()
         } else {
-            _isSignedIn.value = session.isLoggedIn()
+            _isSignedIn.value = true
         }
     }
 

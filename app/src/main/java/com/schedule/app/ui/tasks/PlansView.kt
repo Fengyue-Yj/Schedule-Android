@@ -107,9 +107,17 @@ fun PlansView(
                             )
                             if (plan.planStatus == PlanStatus.PAUSED) {
                                 Text(
-                                    text = "Paused",
+                                    text = "已暂停",
                                     style = AppTheme.typography.caption,
                                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                                )
+                            } else if (plan.nextStep.isNotBlank() && !isCompleted) {
+                                Text(
+                                    text = "下一步: ${plan.nextStep}",
+                                    style = AppTheme.typography.caption,
+                                    color = AppTheme.colors.accent,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }

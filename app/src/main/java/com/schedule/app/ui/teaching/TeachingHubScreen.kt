@@ -103,6 +103,12 @@ fun TeachingHubScreen(
         }
     }
 
+    LaunchedEffect(isSignedIn) {
+        if (isSignedIn) {
+            store.refreshIfNeeded()
+        }
+    }
+
     val importedIds by remember(term, database) {
         if (term != null && database != null) {
             database.assignmentDao().getImportedSourceIds(term.id)

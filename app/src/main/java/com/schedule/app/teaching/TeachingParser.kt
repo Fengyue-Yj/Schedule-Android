@@ -299,15 +299,17 @@ object TeachingParser {
             var initialDueDate: Long? = null
             var initialDueDateText: String? = null
             if (assignment) {
-                val rowText = row.text()
-                val deadlineRegex = Regex("""(?:截止时间|截止日期|到期时间|到期|Due Date|Due)[:：]?\s*([0-9]{4}[年\-/\.][^\n\r<，,；;]{4,30})""")
-                val m = deadlineRegex.find(rowText)
-                if (m != null) {
-                    val candidate = m.groupValues[1].trim()
-                    val parsed = parseDate(candidate)
-                    if (parsed != null) {
-                        initialDueDate = parsed.time
-                        initialDueDateText = candidate
+                val fromTitle = extractDeadlineSnippet(title)
+                val parsedFromTitle = fromTitle?.let { parseDate(it) }
+                if (parsedFromTitle != null) {
+                    initialDueDate = parsedFromTitle.time
+                    initialDueDateText = fromTitle
+                } else {
+                    val fromBody = extractDeadlineSnippet(body) ?: extractDeadlineSnippet(row.text())
+                    val parsedFromBody = fromBody?.let { parseDate(it) }
+                    if (parsedFromBody != null) {
+                        initialDueDate = parsedFromBody.time
+                        initialDueDateText = fromBody
                     }
                 }
             }
@@ -521,69 +523,155 @@ object TeachingParser {
         return result
     }
 
+    fun extractDeadlineSnippet(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        val clean = text.replace("\u00a0", " ").trim()
+
+        // 1. Keyword prefix with date:
+        // Keywords: 截止时间, 截止日期, 截止, 到期时间, 到期日, 到期, 提交时间, 提交截止, 提交期限, Due Date, Due, DDL, ddl, Ddl
+        val prefixRegex = Regex(
+            """(?:截止时间|截止日期|截止|到期时间|到期日|到期|提交时间|提交截止|提交期限|Due\s*Date|Due|DDL|ddl|Ddl)[:：\s]+([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,35})"""
+        )
+        prefixRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        // 2. Date followed by keyword (e.g. "10月20日 23:59 截止", "10月20日23:59前提交", "2024-10-20 23:59截止")
+        val suffixRegex = Regex(
+            """([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,35}?)\s*(?:前(?:提交|上传)|截止|到期)"""
+        )
+        suffixRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        // 3. Parentheses containing deadline (e.g. "(10月20日 23:59截止)", "(DDL: 10/20 23:59)")
+        val parenRegex = Regex(
+            """[（\(](?:DDL|ddl|截止|到期)?[:：\s]*([0-9]{1,4}[年\-/\.月][^\)）\n\r<]{1,35}?)(?:前(?:提交|上传)|截止|到期)?[）\)]"""
+        )
+        parenRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        // 4. Chinese full date pattern directly
+        val chineseFullRegex = Regex(
+            """(\d{4}年\d{1,2}月\d{1,2}日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(?:上午|下午|晚上|中午|早上))?\s*\d{1,2}[:：点时]\d{2}(?:[:：分秒]\d{2})?|\d{4}年\d{1,2}月\d{1,2}日)"""
+        )
+        chineseFullRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        // 5. Standard full date pattern directly (e.g. 2024-10-20 23:59)
+        val stdFullRegex = Regex(
+            """(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}(?:\s+\d{1,2}[:：]\d{2}(?:[:：]\d{2})?)?)"""
+        )
+        stdFullRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        // 6. Chinese month-day with time directly (e.g. 10月20日 23:59)
+        val chineseMonthDayRegex = Regex(
+            """(\d{1,2}月\d{1,2}日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(?:上午|下午|晚上|中午|早上))?\s*\d{1,2}[:：点时]\d{2}(?:[:：分秒]\d{2})?)"""
+        )
+        chineseMonthDayRegex.find(clean)?.let {
+            return it.groupValues[1].trim()
+        }
+
+        return null
+    }
+
     fun parseDeadline(html: String): Pair<Long?, String?> {
         if (isLogin(html)) throw TeachingError.LoginRequired
         val doc = Jsoup.parse(html)
 
-        // 1. Blackboard classic metadata div selectors
+        // 1. Blackboard classic metadata selectors
         val metaSelectors = listOf(
+            "div[id^='assignMeta']:matches(到期|截止|Due|due) + div",
+            ".steplabel:matches(到期|截止|Due|due) + .stepcontent",
+            "tr:has(th:matches(到期|截止|Due|due)) td",
+            "tr:has(td:matches(到期|截止|Due|due)) td:not(:matches(到期|截止|Due|due))",
             "#assignMeta2 + div",
             "#assignMeta1 + div",
             "#assignMeta + div",
             "div[id^='assignMeta'] + div",
+            "span.activityDate",
             "#dueDate",
             "span#dueDate",
             "div.dueDate",
-            "span.dueDate",
-            "span.activityDate"
+            "span.dueDate"
         )
         for (sel in metaSelectors) {
-            val el = doc.select(sel).firstOrNull()
-            val text = el?.text()?.trim()
-            if (!text.isNullOrEmpty()) {
-                val d = parseDate(text)
-                if (d != null) {
-                    return Pair(d.time, text)
+            val elements = try { doc.select(sel) } catch (_: Exception) { null } ?: continue
+            for (el in elements) {
+                val text = el.text().trim()
+                if (text.isNotEmpty()) {
+                    val d = parseDate(text)
+                    if (d != null) {
+                        return Pair(d.time, text)
+                    }
+                    val snippet = extractDeadlineSnippet(text)
+                    if (snippet != null) {
+                        val sd = parseDate(snippet)
+                        if (sd != null) {
+                            return Pair(sd.time, snippet)
+                        }
+                    }
                 }
             }
         }
 
-        // 2. Table rows / metadata items with label
+        // 2. Blackboard table rows / definition lists / p / div with labels
         val labelSelectors = listOf(
-            "tr:contains(截止日期) td",
-            "tr:contains(截止时间) td",
-            "tr:contains(到期时间) td",
-            "tr:contains(到期) td",
-            "tr:contains(Due Date) td",
-            "tr:contains(Due) td",
-            "div.metadataItem:contains(截止)",
-            "div.metadataItem:contains(到期)",
-            "div.metadataItem:contains(Due)",
+            "tr:contains(截止日期)",
+            "tr:contains(截止时间)",
+            "tr:contains(到期时间)",
+            "tr:contains(到期日)",
+            "tr:contains(到期)",
+            "tr:contains(Due Date)",
+            "tr:contains(Due)",
+            "div.metadataItem",
+            "div:contains(截止时间)",
+            "div:contains(截止日期)",
+            "div:contains(到期日)",
             "li:contains(截止日期)",
             "li:contains(截止时间)",
             "p:contains(截止日期)",
             "p:contains(截止时间)"
         )
         for (sel in labelSelectors) {
-            val elements = doc.select(sel)
+            val elements = try { doc.select(sel) } catch (_: Exception) { null } ?: continue
             for (el in elements) {
                 val raw = el.text().trim()
-                val parsed = parseDate(raw)
-                if (parsed != null) {
-                    return Pair(parsed.time, raw)
+                val snippet = extractDeadlineSnippet(raw)
+                if (snippet != null) {
+                    val parsed = parseDate(snippet)
+                    if (parsed != null) {
+                        return Pair(parsed.time, snippet)
+                    }
                 }
             }
         }
 
-        // 3. Fallback: Regex scan across text of assignment container / entire body
-        val bodyText = doc.body()?.text() ?: ""
-        val deadlineRegex = Regex("""(?:截止时间|截止日期|到期时间|到期|Due Date|Due)[:：]?\s*([0-9]{4}[年\-/][^\n\r<，,；;]{4,30})""")
-        val m = deadlineRegex.find(bodyText)
-        if (m != null) {
-            val candidate = m.groupValues[1].trim()
-            val parsed = parseDate(candidate)
+        // 3. Assignment instructions or main content div
+        for (contentSel in listOf("#instructionText", ".vtbegenerated", "#assignmentInstructions", ".details", ".contentList")) {
+            val contentEl = doc.select(contentSel).firstOrNull()
+            if (contentEl != null) {
+                val snippet = extractDeadlineSnippet(contentEl.text())
+                if (snippet != null) {
+                    val parsed = parseDate(snippet)
+                    if (parsed != null) {
+                        return Pair(parsed.time, snippet)
+                    }
+                }
+            }
+        }
+
+        // 4. Fallback: Search the entire body text
+        val bodyText = doc.body().text()
+        val snippet = extractDeadlineSnippet(bodyText)
+        if (snippet != null) {
+            val parsed = parseDate(snippet)
             if (parsed != null) {
-                return Pair(parsed.time, candidate)
+                return Pair(parsed.time, snippet)
             }
         }
 
@@ -615,80 +703,109 @@ object TeachingParser {
             return Date.from(instant)
         } catch (_: Exception) {}
 
-        // 2. Chinese pattern with full regex search (e.g. 2024年10月15日 星期二 下午 23:59 or 发布时间: 2024年9月2日 08:30)
-        val chineseRegex = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*(?:星期\S)?)?(?:\s*(上午|下午))?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?""")
-        val match = chineseRegex.find(normalized)
-        if (match != null) {
-            try {
-                val year = match.groupValues[1].toInt()
-                val month = match.groupValues[2].toInt()
-                val day = match.groupValues[3].toInt()
-                val ampm = match.groupValues[4]
-                var hour = match.groupValues[5].toInt()
-                val minute = match.groupValues[6].toInt()
-                val second = match.groupValues[7].toIntOrNull() ?: 0
-                if (ampm == "下午" && hour < 12) hour += 12
-                if (ampm == "上午" && hour == 12) hour = 0
-                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
-                cal.set(year, month - 1, day, hour, minute, second)
-                cal.set(java.util.Calendar.MILLISECOND, 0)
-                return cal.time
-            } catch (_: Exception) {}
-        }
-
-        // Chinese date without time (e.g. 2024年10月15日) -> default to 23:59:59 for deadlines
-        val chineseDateOnly = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日""")
-        val mDateOnly = chineseDateOnly.find(normalized)
-        if (mDateOnly != null) {
-            try {
-                val year = mDateOnly.groupValues[1].toInt()
-                val month = mDateOnly.groupValues[2].toInt()
-                val day = mDateOnly.groupValues[3].toInt()
-                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
-                cal.set(year, month - 1, day, 23, 59, 0)
-                cal.set(java.util.Calendar.MILLISECOND, 0)
-                return cal.time
-            } catch (_: Exception) {}
-        }
-
-        // 3. Extract date pattern like 2024-09-01 10:00:00 or 2024/09/01 10:00 or 2024.09.01 10:00
-        val stdDateRegex = Regex("""(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)""")
-        val stdMatch = stdDateRegex.find(normalized)
-        if (stdMatch != null) {
-            val candidate = stdMatch.groupValues[1]
-            val formats = listOf(
-                "yyyy-MM-dd HH:mm:ss",
-                "yyyy/MM/dd HH:mm:ss",
-                "yyyy.MM.dd HH:mm:ss",
-                "yyyy-MM-dd HH:mm",
-                "yyyy/MM/dd HH:mm",
-                "yyyy.MM.dd HH:mm",
-                "yyyy-MM-dd",
-                "yyyy/MM/dd",
-                "yyyy.MM.dd"
-            )
-            for (format in formats) {
-                try {
-                    val sdf = SimpleDateFormat(format, Locale.US)
-                    sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
-                    val parsed = sdf.parse(candidate)
-                    if (parsed != null) {
-                        // If format is date-only without time, default to 23:59
-                        if (!format.contains("HH")) {
-                            val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
-                            cal.time = parsed
-                            cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
-                            cal.set(java.util.Calendar.MINUTE, 59)
-                            cal.set(java.util.Calendar.SECOND, 0)
-                            return cal.time
-                        }
-                        return parsed
-                    }
-                } catch (_: Exception) {}
+        fun inferYear(month: Int): Int {
+            val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+            val curYear = cal.get(java.util.Calendar.YEAR)
+            val curMonth = cal.get(java.util.Calendar.MONTH) + 1
+            return when {
+                curMonth >= 9 && month <= 2 -> curYear + 1 // Fall semester crossing into new year
+                curMonth <= 2 && month >= 9 -> curYear - 1
+                else -> curYear
             }
         }
 
-        // 4. English patterns
+        fun buildDate(year: Int, month: Int, day: Int, hourStr: String?, minStr: String?, secStr: String?, ampm: String?): Date? {
+            var hour = hourStr?.toIntOrNull() ?: 23
+            var minute = minStr?.toIntOrNull() ?: 59
+            var second = secStr?.toIntOrNull() ?: 0
+
+            // Handle 24:00 (frequent in Chinese assignment deadlines -> clamp to 23:59:59 of same day)
+            if (hour >= 24) {
+                hour = 23
+                minute = 59
+                second = 59
+            } else {
+                if ((ampm == "下午" || ampm == "晚上") && hour < 12) hour += 12
+                if (ampm == "上午" && hour == 12) hour = 0
+            }
+
+            return try {
+                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai"))
+                cal.set(year, month - 1, day, hour, minute, second)
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                cal.time
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        // 2. Chinese pattern with full 4-digit year: 2024年10月15日 [星期二] [下午] 23:59[:00] or 23点59分 or 23点
+        val chineseFull = Regex(
+            """(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(上午|下午|晚上|中午|早上))?(?:\s*(\d{1,2})[:：点时](\d{2})(?:[:：分秒](\d{2}))?|\s*(\d{1,2})点)?"""
+        )
+        chineseFull.find(normalized)?.let { m ->
+            val year = m.groupValues[1].toInt()
+            val month = m.groupValues[2].toInt()
+            val day = m.groupValues[3].toInt()
+            val ampm = m.groupValues[4].takeIf { it.isNotEmpty() }
+            val hour = m.groupValues[5].ifEmpty { m.groupValues[8] }.takeIf { it.isNotEmpty() }
+            val minute = m.groupValues[6].takeIf { it.isNotEmpty() }
+            val second = m.groupValues[7].takeIf { it.isNotEmpty() }
+            val d = buildDate(year, month, day, hour, minute, second, ampm)
+            if (d != null) return d
+        }
+
+        // 3. Chinese pattern with month-day (no year): 10月15日 [星期二] [下午] 23:59[:00] or 23点59分 or 23点
+        val chineseMonthDay = Regex(
+            """(\d{1,2})月(\d{1,2})日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(上午|下午|晚上|中午|早上))?(?:\s*(\d{1,2})[:：点时](\d{2})(?:[:：分秒](\d{2}))?|\s*(\d{1,2})点)?"""
+        )
+        chineseMonthDay.find(normalized)?.let { m ->
+            val month = m.groupValues[1].toInt()
+            val day = m.groupValues[2].toInt()
+            if (month in 1..12 && day in 1..31) {
+                val year = inferYear(month)
+                val ampm = m.groupValues[3].takeIf { it.isNotEmpty() }
+                val hour = m.groupValues[4].ifEmpty { m.groupValues[7] }.takeIf { it.isNotEmpty() }
+                val minute = m.groupValues[5].takeIf { it.isNotEmpty() }
+                val second = m.groupValues[6].takeIf { it.isNotEmpty() }
+                val d = buildDate(year, month, day, hour, minute, second, ampm)
+                if (d != null) return d
+            }
+        }
+
+        // 4. Standard full date: 2024-10-15 23:59:00 or 2024/10/15 23:59 or 2024.10.15 23:59
+        val stdFull = Regex(
+            """(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})(?:\s+(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?)?"""
+        )
+        stdFull.find(normalized)?.let { m ->
+            val year = m.groupValues[1].toInt()
+            val month = m.groupValues[2].toInt()
+            val day = m.groupValues[3].toInt()
+            val hour = m.groupValues[4].takeIf { it.isNotEmpty() }
+            val minute = m.groupValues[5].takeIf { it.isNotEmpty() }
+            val second = m.groupValues[6].takeIf { it.isNotEmpty() }
+            val d = buildDate(year, month, day, hour, minute, second, null)
+            if (d != null) return d
+        }
+
+        // 5. Standard month-day with time: 10-15 23:59 or 10/15 23:59 or 10.15 23:59
+        val stdMonthDay = Regex(
+            """(?:^|[^\d])(\d{1,2})[-/\.](\d{1,2})\s+(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?"""
+        )
+        stdMonthDay.find(normalized)?.let { m ->
+            val month = m.groupValues[1].toInt()
+            val day = m.groupValues[2].toInt()
+            if (month in 1..12 && day in 1..31) {
+                val year = inferYear(month)
+                val hour = m.groupValues[3]
+                val minute = m.groupValues[4]
+                val second = m.groupValues[5].takeIf { it.isNotEmpty() }
+                val d = buildDate(year, month, day, hour, minute, second, null)
+                if (d != null) return d
+            }
+        }
+
+        // 6. English patterns
         val enFormats = listOf(
             "EEEE, MMMM d, yyyy h:mm:ss a",
             "EEEE, MMMM d, yyyy h:mm a",
@@ -704,6 +821,7 @@ object TeachingParser {
                 return sdf.parse(normalized)
             } catch (_: Exception) {}
         }
+
         return null
     }
 }

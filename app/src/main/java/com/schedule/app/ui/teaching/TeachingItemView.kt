@@ -59,6 +59,39 @@ fun TeachingItemView(
     var isImported by remember { mutableStateOf(false) }
     var courses by remember { mutableStateOf<List<CourseEntity>>(emptyList()) }
     var selectedCourseId by remember { mutableStateOf<String?>(null) }
+    var customDueDate by remember(item) { mutableStateOf(item?.dueDate) }
+
+    fun showDateTimePicker() {
+        val baseTime = customDueDate ?: item?.dueDate ?: System.currentTimeMillis()
+        val currentCal = java.util.Calendar.getInstance().apply { timeInMillis = baseTime }
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val timePickerDialog = android.app.TimePickerDialog(
+                    context,
+                    { _, hourOfDay, minute ->
+                        val newCal = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.YEAR, year)
+                            set(java.util.Calendar.MONTH, month)
+                            set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth)
+                            set(java.util.Calendar.HOUR_OF_DAY, hourOfDay)
+                            set(java.util.Calendar.MINUTE, minute)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        customDueDate = newCal.timeInMillis
+                    },
+                    currentCal.get(java.util.Calendar.HOUR_OF_DAY),
+                    currentCal.get(java.util.Calendar.MINUTE),
+                    true
+                )
+                timePickerDialog.show()
+            },
+            currentCal.get(java.util.Calendar.YEAR),
+            currentCal.get(java.util.Calendar.MONTH),
+            currentCal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
+    }
 
     LaunchedEffect(itemId, term, database) {
         if (term != null && database != null && item != null) {
@@ -79,7 +112,10 @@ fun TeachingItemView(
                 val matched = TeachingImporter.findMatchingCourse(item, loadedCourses)
                 selectedCourseId = matched?.id
             }
-            item?.let {
+            if (existing?.dueDate != null) {
+                customDueDate = existing.dueDate
+            }
+            item.let {
                 store.markRead(it.id)
                 store.markRead(it.itemReadKey)
             }
@@ -212,8 +248,57 @@ fun TeachingItemView(
                     }
                 }
 
-                // Due date
-                if (item.dueDate != null) {
+                // Due date card (for assignments, show interactive card allowing tap to modify or set)
+                if (item.kind == TeachingKind.ASSIGNMENT) {
+                    Card(
+                        onClick = { showDateTimePicker() },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (customDueDate != null) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (customDueDate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = if (customDueDate != null) "截止时间 (DDL)" else "截止时间 (未识别/未设置)",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (customDueDate != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (customDueDate != null) DateFormatUtil.formatDateTime(customDueDate!!) else "点击此处添加截止时间 (DDL)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (customDueDate != null) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (customDueDate != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Text(
+                                text = if (customDueDate != null) "修改" else "设置",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                } else if (item.dueDate != null) {
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
@@ -321,6 +406,7 @@ fun TeachingItemView(
                                             item = item,
                                             term = term,
                                             course = selectedCourse,
+                                            chosenDate = customDueDate,
                                             database = database
                                         )
                                         isImported = true

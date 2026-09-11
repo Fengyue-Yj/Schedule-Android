@@ -105,7 +105,7 @@ object TeachingURLs {
     fun announcementsSimple(courseId: String) = "$origin/webapps/blackboard/execute/announcement?method=search&course_id=$courseId"
     fun announcementsApi(courseId: String) = "$origin/learn/api/public/v1/courses/$courseId/announcements?limit=100"
     fun content(courseId: String, contentId: String) = "$origin/webapps/blackboard/content/listContent.jsp?course_id=$courseId&content_id=$contentId"
-    fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?action=newAttempt&course_id=$courseId&content_id=$contentId"
+    fun assignment(courseId: String, contentId: String) = "$origin/webapps/assignment/uploadAssignment?course_id=$courseId&content_id=$contentId"
     fun grades(courseId: String) = "$origin/webapps/bb-mygrades-BBLEARN/myGrades.jsp?course_id=$courseId&stream_name=mygrades"
     fun gradesApi(courseId: String) = "$origin/learn/api/public/v2/courses/$courseId/gradebook/users/me"
     fun gradebookColumnsApi(courseId: String) = "$origin/learn/api/public/v2/courses/$courseId/gradebook/columns"

@@ -7,8 +7,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.schedule.app.data.AppDatabase
+import com.schedule.app.data.models.AssignmentEntity
+import com.schedule.app.data.models.ExamEntity
 import com.schedule.app.data.models.SettingEntity
 import com.schedule.app.ui.components.PageHeader
+import com.schedule.app.ui.tasks.AssignmentDetailView
+import com.schedule.app.ui.tasks.ExamDetailView
 import com.schedule.app.ui.teaching.TeachingHubScreen
 import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.util.UpcomingEvent
@@ -66,6 +70,9 @@ fun InsightsScreen(
         plans.firstOrNull { it.status == "ACTIVE" && it.nextStep.isNotBlank() }?.nextStep
     }
 
+    var selectedAssignment by remember { mutableStateOf<AssignmentEntity?>(null) }
+    var selectedExam by remember { mutableStateOf<ExamEntity?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -79,7 +86,14 @@ fun InsightsScreen(
 
         InsightsHeaderPanel(
             events = events,
-            nextStep = nextStep
+            nextStep = nextStep,
+            onSelect = { event ->
+                if (event.isExam) {
+                    selectedExam = exams.find { it.id == event.id }
+                } else {
+                    selectedAssignment = assignments.find { it.id == event.id }
+                }
+            }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -99,5 +113,23 @@ fun InsightsScreen(
         )
 
         Spacer(modifier = Modifier.height(100.dp))
+    }
+
+    if (selectedAssignment != null) {
+        AssignmentDetailView(
+            item = selectedAssignment!!,
+            courses = courses,
+            database = database,
+            onDismiss = { selectedAssignment = null }
+        )
+    }
+
+    if (selectedExam != null) {
+        ExamDetailView(
+            item = selectedExam!!,
+            courses = courses,
+            database = database,
+            onDismiss = { selectedExam = null }
+        )
     }
 }

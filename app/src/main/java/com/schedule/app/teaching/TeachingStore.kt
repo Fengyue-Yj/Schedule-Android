@@ -168,8 +168,36 @@ class TeachingStore private constructor(private val context: Context) {
                         var finalItem = item
                         if (item.kind == TeachingKind.ASSIGNMENT) {
                             try {
-                                val assignHtml = session.get(TeachingURLs.assignment(course.id, item.contentID))
-                                val (dueDate, raw) = TeachingParser.parseDeadline(assignHtml)
+                                // 1. Try assignment upload page (standard URL)
+                                var assignHtml = session.getOrNull(TeachingURLs.assignment(course.id, item.contentID))
+                                var (dueDate, raw) = if (!assignHtml.isNullOrBlank()) TeachingParser.parseDeadline(assignHtml) else Pair(null, null)
+                                
+                                // 2. If deadline not found on upload page, check viewSubmissionHistory.jsp
+                                if (dueDate == null) {
+                                    val historyUrl = "${TeachingURLs.origin}/webapps/assignment/viewSubmissionHistory.jsp?course_id=${course.id}&content_id=${item.contentID}"
+                                    val historyHtml = session.getOrNull(historyUrl)
+                                    if (!historyHtml.isNullOrBlank()) {
+                                        val (histDate, histRaw) = TeachingParser.parseDeadline(historyHtml)
+                                        if (histDate != null) {
+                                            dueDate = histDate
+                                            raw = histRaw
+                                        }
+                                    }
+                                }
+
+                                // 3. Fallback: try action=newAttempt
+                                if (dueDate == null) {
+                                    val newAttemptUrl = "${TeachingURLs.origin}/webapps/assignment/uploadAssignment?action=newAttempt&course_id=${course.id}&content_id=${item.contentID}"
+                                    val newAttemptHtml = session.getOrNull(newAttemptUrl)
+                                    if (!newAttemptHtml.isNullOrBlank()) {
+                                        val (attDate, attRaw) = TeachingParser.parseDeadline(newAttemptHtml)
+                                        if (attDate != null) {
+                                            dueDate = attDate
+                                            raw = attRaw
+                                        }
+                                    }
+                                }
+
                                 if (dueDate != null) {
                                     finalItem = finalItem.copy(dueDate = dueDate, dueDateText = raw)
                                 } else if (finalItem.dueDate == null && raw != null) {

@@ -36,6 +36,8 @@ import com.schedule.app.util.CompanionDialogue
 import com.schedule.app.util.UpcomingEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun CompanionCard(
@@ -45,7 +47,17 @@ fun CompanionCard(
     onHide: () -> Unit = {}
 ) {
     val isDark = isSystemInDarkTheme()
-    var character by remember { mutableStateOf(CompanionCharacter.LULU) }
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("companion_prefs", Context.MODE_PRIVATE) }
+    val savedChar = remember {
+        val name = prefs.getString("selected_character", CompanionCharacter.LULU.name)
+        try {
+            CompanionCharacter.valueOf(name ?: CompanionCharacter.LULU.name)
+        } catch (e: Exception) {
+            CompanionCharacter.LULU
+        }
+    }
+    var character by remember { mutableStateOf(savedChar) }
     var reaction by remember { mutableStateOf(CompanionReaction.IDLE) }
     var isResting by remember { mutableStateOf(false) }
     var touchSequence by remember { mutableIntStateOf(0) }
@@ -58,7 +70,6 @@ fun CompanionCard(
     }
     var currentSpeech by remember { mutableStateOf(speechList.firstOrNull() ?: "今天也可以先迈出很小的一步。") }
 
-    val coroutineScope = rememberCoroutineScope()
 
     fun speak(random: Boolean) {
         val lines = CompanionDialogue.lines(events, nextStep)
@@ -195,6 +206,7 @@ fun CompanionCard(
                             text = { Text(char.displayName) },
                             onClick = {
                                 character = char
+                                prefs.edit().putString("selected_character", char.name).apply()
                                 isResting = false
                                 reaction = CompanionReaction.WAKE
                                 touchSequence++

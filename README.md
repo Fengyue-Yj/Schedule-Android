@@ -3,8 +3,8 @@
 <div align="center">
   <img src="art/icon.png" width="120" height="120" alt="且行 Logo" />
   <h2>且行 · Schedule</h2>
-  <p><b>清新、纯粹、优雅的高校课表与日程待办管理应用</b></p>
-  <p>原生移植自 iOS 版 <a href="https://github.com/aidenlee2005/Schedule-Public">Schedule-Public</a>，针对 Android 15 与现代高刷全面屏深度调优。</p>
+  <p><b>简洁风北大日程待办管理应用</b></p>
+  <p>创意（原版）源自 <a href="https://github.com/aidenlee2005/Schedule-Public">Schedule-Public</a>，针对 Android 15 深度优化。</p>
 
   <p>
     <a href="https://github.com/Fengyue-Yj/Schedule-Android/releases/latest"><img src="https://img.shields.io/github/v/release/Fengyue-Yj/Schedule-Android?color=3D9169&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="Latest Release"></a>

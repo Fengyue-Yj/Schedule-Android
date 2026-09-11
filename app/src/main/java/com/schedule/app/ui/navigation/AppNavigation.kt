@@ -1,7 +1,10 @@
 package com.schedule.app.ui.navigation
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -177,24 +180,24 @@ fun FloatingBottomBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(62.dp)
             .shadow(
-                elevation = 14.dp,
+                elevation = if (isDark) 0.dp else 10.dp,
                 shape = RoundedCornerShape(32.dp),
-                spotColor = Color(0x3D000000),
-                ambientColor = Color(0x18000000)
+                spotColor = Color(0x26000000),
+                ambientColor = Color(0x12000000)
             ),
         shape = RoundedCornerShape(32.dp),
-        color = if (isDark) Color(0xF21C2621) else Color(0xF7FFFFFF),
+        color = if (isDark) Color(0xF01C1C1E) else Color(0xF2FFFFFF),
         border = BorderStroke(
-            width = 0.8.dp,
-            color = if (isDark) Color(0x33FFFFFF) else Color(0x1A000000)
+            width = 0.5.dp,
+            color = if (isDark) Color(0x38FFFFFF) else Color(0x24000000)
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(horizontal = 6.dp, vertical = 5.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -202,20 +205,25 @@ fun FloatingBottomBar(
                 val isSelected = currentRoute == item.route
                 val animatedBgColor by animateColorAsState(
                     targetValue = if (isSelected) AppTheme.colors.selectedFill else Color.Transparent,
-                    animationSpec = tween(200),
+                    animationSpec = tween(180),
                     label = "tabBg"
                 )
                 val animatedContentColor by animateColorAsState(
-                    targetValue = if (isSelected) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    animationSpec = tween(200),
+                    targetValue = if (isSelected) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                    animationSpec = tween(180),
                     label = "tabContent"
+                )
+                val iconScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.06f else 1.0f,
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
+                    label = "tabIconScale"
                 )
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(22.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(animatedBgColor)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -239,14 +247,20 @@ fun FloatingBottomBar(
                             imageVector = item.icon,
                             contentDescription = item.title,
                             tint = animatedContentColor,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier
+                                .size(21.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                }
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = item.title,
                             style = MaterialTheme.typography.labelSmall,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                            letterSpacing = (-0.2).sp,
                             color = animatedContentColor
                         )
                     }

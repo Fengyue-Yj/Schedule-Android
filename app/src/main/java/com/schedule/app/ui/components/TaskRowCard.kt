@@ -1,6 +1,5 @@
 package com.schedule.app.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,7 +45,7 @@ fun TaskRowCard(
             modifier = Modifier
                 .weight(1f)
                 .defaultMinSize(minHeight = 44.dp)
-                .clickable(onClick = onOpen)
+                .iosPressable(onClick = onOpen)
                 .semantics { testTag = "task-$title" },
             contentAlignment = Alignment.CenterStart
         ) {
@@ -56,15 +55,15 @@ fun TaskRowCard(
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .clickable(onClick = onDelete)
+                .iosPressable(onClick = onDelete)
                 .semantics { contentDescription = "Delete $title" },
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Outlined.Delete,
                 contentDescription = null,
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
+                tint = Color.Gray.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp)
             )
         }
     }

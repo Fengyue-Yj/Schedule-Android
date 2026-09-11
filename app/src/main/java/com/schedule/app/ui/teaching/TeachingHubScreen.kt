@@ -1,6 +1,7 @@
 package com.schedule.app.ui.teaching
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.schedule.app.ui.components.*
 import com.schedule.app.ui.theme.AppTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -169,21 +171,23 @@ fun TeachingHubScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             val displayedKinds = listOf(TeachingKind.GRADE, TeachingKind.ASSIGNMENT, TeachingKind.MATERIAL)
-            TabRow(selectedTabIndex = displayedKinds.indexOf(selectedKind).coerceAtLeast(0)) {
-                displayedKinds.forEach { kind ->
-                    val title = when (kind) {
+            AppSegmentedPicker(
+                label = "教学网分类",
+                selection = selectedKind,
+                options = displayedKinds,
+                title = { kind ->
+                    when (kind) {
                         TeachingKind.GRADE -> "成绩"
                         TeachingKind.ASSIGNMENT -> "作业"
                         TeachingKind.MATERIAL -> "资料课件"
                         TeachingKind.ANNOUNCEMENT -> "通知"
                     }
-                    Tab(
-                        selected = selectedKind == kind,
-                        onClick = { selectedKind = kind },
-                        text = { Text(title) }
-                    )
-                }
-            }
+                },
+                onSelectionChange = { selectedKind = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
 
             if (isRefreshing) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -564,8 +568,10 @@ private fun AssignmentCard(
     onQuickImport: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp)
+        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
+        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -664,8 +670,10 @@ private fun MaterialCard(
     val context = LocalContext.current
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp)
+        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
+        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -789,8 +797,10 @@ private fun AnnouncementCard(
     onOpenDetail: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp)
+        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
+        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -886,8 +896,10 @@ private fun GradeCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp)
+            .iosPressable { onOpenDetail() },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
+        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
     ) {
         Column(
             modifier = Modifier.padding(14.dp),

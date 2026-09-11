@@ -1,49 +1,43 @@
 package com.schedule.app.ui.teaching
 
 import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.schedule.app.ui.components.*
-import com.schedule.app.ui.theme.AppTheme
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.schedule.app.data.AppDatabase
-import com.schedule.app.data.models.CourseEntity
 import com.schedule.app.data.models.SettingEntity
-import com.schedule.app.teaching.DownloadStatus
 import com.schedule.app.teaching.TeachingDownloader
 import com.schedule.app.teaching.TeachingImporter
 import com.schedule.app.teaching.TeachingItem
 import com.schedule.app.teaching.TeachingKind
 import com.schedule.app.teaching.TeachingParser
 import com.schedule.app.teaching.TeachingStore
+import com.schedule.app.ui.components.*
+import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.util.DateFormatUtil
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,7 +45,7 @@ fun TeachingHubScreen(
     onNavigateBack: () -> Unit,
     term: SettingEntity? = null,
     database: AppDatabase? = null,
-    initialKind: TeachingKind = TeachingKind.ASSIGNMENT,
+    initialKind: TeachingKind = TeachingKind.GRADE,
     initialCourseFilter: String = ""
 ) {
     val context = LocalContext.current
@@ -59,17 +53,20 @@ fun TeachingHubScreen(
     val snapshot by store.snapshot.collectAsState()
     val isRefreshing by store.isRefreshing.collectAsState()
     val isSignedIn by store.isSignedIn.collectAsState()
-    val downloadStates by TeachingDownloader.downloadStates.collectAsState()
+    val storeMessage by store.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
     var selectedKind by remember { mutableStateOf(initialKind) }
     var selectedItemId by remember { mutableStateOf<String?>(null) }
+    var courseFilter by remember { mutableStateOf(initialCourseFilter) }
+    var showLoginScreen by remember { mutableStateOf(false) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var showCoursePickerSheet by remember { mutableStateOf(false) }
     var isBatchImporting by remember { mutableStateOf(false) }
     var isBatchDownloading by remember { mutableStateOf(false) }
-    var courseFilter by remember { mutableStateOf(initialCourseFilter) }
 
-    // Collect courses and imported assignments
+    // Collect courses from Room database
     val courses by remember(term, database) {
         if (term != null && database != null) {
             database.courseDao().getByTermId(term.id)
@@ -78,6 +75,7 @@ fun TeachingHubScreen(
         }
     }.collectAsState(initial = emptyList())
 
+    // Auto-match initial course filter if passed as local course ID
     val matchingTeachingCourseId = remember(snapshot.courses, snapshot.courseLinks, initialCourseFilter, courses) {
         if (initialCourseFilter.isEmpty()) ""
         else {
@@ -109,6 +107,7 @@ fun TeachingHubScreen(
         }
     }
 
+    // Collect imported assignment IDs from Room database
     val importedIds by remember(term, database) {
         if (term != null && database != null) {
             database.assignmentDao().getImportedSourceIds(term.id)
@@ -119,6 +118,7 @@ fun TeachingHubScreen(
 
     val importedSet = remember(importedIds) { importedIds.toSet() }
 
+    // Detail view navigation
     if (selectedItemId != null) {
         TeachingItemView(
             itemId = selectedItemId!!,
@@ -129,17 +129,36 @@ fun TeachingHubScreen(
         return
     }
 
-    if (!isSignedIn) {
+    // Login screen sheet
+    if (showLoginScreen || !isSignedIn) {
         TeachingSignInScreen(
-            onNavigateBack = onNavigateBack,
+            onNavigateBack = {
+                if (!isSignedIn) {
+                    onNavigateBack()
+                } else {
+                    showLoginScreen = false
+                }
+            },
             onSignInSuccess = {
+                showLoginScreen = false
                 scope.launch { store.refresh() }
             }
         )
         return
     }
 
+    val displayedKinds = listOf(TeachingKind.GRADE, TeachingKind.ASSIGNMENT, TeachingKind.MATERIAL)
+
+    val filteredItems = snapshot.items.filter { 
+        it.kind == selectedKind && (courseFilter.isEmpty() || it.courseID == courseFilter)
+    }.let { list ->
+        TeachingItem.newestFirst(list)
+    }
+
+    val selectedCourseTitle = snapshot.courses.firstOrNull { it.id == courseFilter }?.displayTitle ?: "全部课程"
+
     Scaffold(
+        containerColor = AppTheme.colors.background,
         snackbarHost = {
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -149,643 +168,411 @@ fun TeachingHubScreen(
             )
         },
         topBar = {
-            TopAppBar(
-                title = { Text("北大教学网") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    FilledTonalButton(
-                        onClick = { scope.launch { store.refresh() } },
-                        enabled = !isRefreshing,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (isRefreshing) "同步中" else "同步", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Spacer(Modifier.width(4.dp))
-                    TextButton(onClick = { store.signOut() }) {
-                        Text("退出")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            val displayedKinds = listOf(TeachingKind.GRADE, TeachingKind.ASSIGNMENT, TeachingKind.MATERIAL)
-            AppSegmentedPicker(
-                label = "教学网分类",
-                selection = selectedKind,
-                options = displayedKinds,
-                title = { kind ->
-                    when (kind) {
-                        TeachingKind.GRADE -> "成绩"
-                        TeachingKind.ASSIGNMENT -> "作业"
-                        TeachingKind.MATERIAL -> "资料课件"
-                        TeachingKind.ANNOUNCEMENT -> "通知"
-                    }
-                },
-                onSelectionChange = { selectedKind = it },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            if (isRefreshing) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
-            if (snapshot.courses.isNotEmpty()) {
-                var filterExpanded by remember { mutableStateOf(false) }
-                val selectedCourseTitle = snapshot.courses.firstOrNull { it.id == courseFilter }?.displayTitle ?: "全部课程"
-                Surface(
+                    .background(AppTheme.colors.surface)
+                    .statusBarsPadding()
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    // Left action: iOS "完成" button
+                    Text(
+                        text = "完成",
+                        color = AppTheme.colors.accent,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        modifier = Modifier
+                            .iosPressable(onClick = onNavigateBack)
+                            .padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
+
+                    // Center Title
+                    Text(
+                        text = "北大教学网",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    // Right action: iOS "ellipsis.circle" more menu
+                    Box {
+                        Surface(
+                            shape = CircleShape,
+                            color = AppTheme.colors.accent.copy(alpha = 0.1f),
+                            modifier = Modifier
+                                .size(32.dp)
+                                .iosPressable { showOptionsMenu = true }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreHoriz,
+                                    contentDescription = "更多选项",
+                                    tint = AppTheme.colors.accent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = showOptionsMenu,
+                            onDismissRequest = { showOptionsMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (isRefreshing) "正在同步中..." else "同步最新数据") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = if (isRefreshing) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else AppTheme.colors.accent
+                                    )
+                                },
+                                enabled = !isRefreshing,
+                                onClick = {
+                                    showOptionsMenu = false
+                                    scope.launch { store.refresh() }
+                                }
+                            )
+
+                            if (selectedKind == TeachingKind.ASSIGNMENT && term != null && database != null && filteredItems.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isBatchImporting) "正在导入..." else "一键导入全部作业") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.CloudDownload,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.accent
+                                        )
+                                    },
+                                    enabled = !isBatchImporting,
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        isBatchImporting = true
+                                        scope.launch {
+                                            try {
+                                                val count = TeachingImporter.importAll(
+                                                    items = filteredItems,
+                                                    term = term,
+                                                    courses = courses,
+                                                    database = database
+                                                )
+                                                val msg = "已成功导入 $count 项作业至待办列表"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
+                                            } catch (e: Exception) {
+                                                val msg = "导入失败: ${e.localizedMessage}"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
+                                            } finally {
+                                                isBatchImporting = false
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (selectedKind == TeachingKind.MATERIAL && filteredItems.any { it.attachments.isNotEmpty() }) {
+                                val allAttachments = filteredItems.flatMap { item -> item.attachments.map { att -> Pair(att, item) } }
+                                DropdownMenuItem(
+                                    text = { Text(if (isBatchDownloading) "正在下载..." else "一键下载全部资料 (${allAttachments.size})") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.accent
+                                        )
+                                    },
+                                    enabled = !isBatchDownloading,
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        isBatchDownloading = true
+                                        scope.launch {
+                                            try {
+                                                var succ = 0
+                                                var fail = 0
+                                                for ((att, sourceItem) in allAttachments) {
+                                                    if (!TeachingDownloader.isDownloaded(context, att.name)) {
+                                                        val res = TeachingDownloader.download(
+                                                            context = context,
+                                                            url = att.url,
+                                                            suggestedFileName = att.name,
+                                                            referer = sourceItem.sourceURL
+                                                        )
+                                                        if (res.isSuccess) succ++ else fail++
+                                                    }
+                                                }
+                                                val msg = "批量下载完成: 成功 $succ 个${if (fail > 0) "，失败 $fail 个" else ""}"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
+                                            } catch (e: Exception) {
+                                                val msg = "批量下载出错: ${e.localizedMessage}"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                snackbarHostState.showSnackbar(msg)
+                                            } finally {
+                                                isBatchDownloading = false
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+
+                            if (selectedKind == TeachingKind.GRADE && filteredItems.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("全部标为已读") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.DoneAll,
+                                            contentDescription = null,
+                                            tint = AppTheme.colors.accent
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        store.markAllAnnouncementsRead()
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = AppTheme.colors.border.copy(alpha = 0.35f)
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("重新登录") },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showLoginScreen = true
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = { Text("退出登录", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    store.signOut()
+                                }
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = AppTheme.colors.border.copy(alpha = 0.35f)
+                )
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // 1. iOS Status & Course Filter Section
+            item {
+                IosFormSection {
+                    // Row 1: Connection status & refresh state
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = if (isSignedIn) "已连接教学网" else "未连接教学网",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 17.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            val fetchedAt = snapshot.fetchedAt
+                            if (fetchedAt > 0) {
+                                Text(
+                                    text = "更新于 ${DateFormatUtil.formatDateTime(fetchedAt)}",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (isRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = AppTheme.colors.accent
+                            )
+                        } else if (!isSignedIn) {
+                            Text(
+                                text = "登录",
+                                color = AppTheme.colors.accent,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                modifier = Modifier.iosPressable { showLoginScreen = true }
+                            )
+                        }
+                    }
+
+                    // Progress or status message
+                    if (!storeMessage.isNullOrBlank()) {
+                        IosFormDivider()
+                        Text(
+                            text = storeMessage!!,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+
+                    // Row 2: Course Filter (iOS Form Row)
+                    if (isSignedIn && snapshot.courses.isNotEmpty()) {
+                        IosFormDivider()
+                        IosFormRow(
+                            label = "课程",
+                            value = selectedCourseTitle,
+                            showChevron = true,
+                            onClick = { showCoursePickerSheet = true }
+                        )
+                    }
+                }
+            }
+
+            // 2. Category Picker (Segmented Control)
+            item {
+                AppSegmentedPicker(
+                    label = "教学网分类",
+                    selection = selectedKind,
+                    options = displayedKinds,
+                    title = { it.title },
+                    onSelectionChange = { selectedKind = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                )
+            }
+
+            // 3. Items or Empty State
+            if (filteredItems.isEmpty()) {
+                item {
+                    AppEmptyState(
+                        title = if (isSignedIn) "暂无${selectedKind.title}" else "所有课程，汇于一处",
+                        message = if (isSignedIn) "点击右上角更多选项同步最新数据，或切换课程筛选。" else "登录以查看成绩、导入作业和下载课件资料。",
+                        icon = Icons.Default.AccountBalance,
+                        modifier = Modifier.padding(top = 40.dp)
+                    )
+                }
+            } else {
+                items(filteredItems, key = { it.id }) { item ->
+                    TeachingItemCard(
+                        item = item,
+                        isImported = importedSet.contains(item.id),
+                        isUnread = !snapshot.readKeys.contains(item.id) && !snapshot.readKeys.contains(item.itemReadKey),
+                        onOpen = {
+                            store.markRead(item.id)
+                            store.markRead(item.itemReadKey)
+                            selectedItemId = item.id
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // iOS Course Picker Modal Bottom Sheet
+    if (showCoursePickerSheet) {
+        IosModalBottomSheet(
+            onDismissRequest = { showCoursePickerSheet = false }
+        ) {
+            IosSheetHeader(
+                title = "选择课程",
+                leftActionText = "完成",
+                onLeftAction = { showCoursePickerSheet = false }
+            )
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    IosFormSection {
+                        // "全部课程" option
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { filterExpanded = true }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .iosPressable {
+                                    courseFilter = ""
+                                    showCoursePickerSheet = false
+                                }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "课程筛选: $selectedCourseTitle",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
+                                text = "全部课程",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = if (courseFilter.isEmpty()) FontWeight.SemiBold else FontWeight.Normal
+                                ),
+                                color = if (courseFilter.isEmpty()) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurface
                             )
-                            Text(
-                                text = "切换 ▾",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = filterExpanded,
-                            onDismissRequest = { filterExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("全部课程") },
-                                onClick = {
-                                    courseFilter = ""
-                                    filterExpanded = false
-                                }
-                            )
-                            snapshot.courses.forEach { c ->
-                                DropdownMenuItem(
-                                    text = { Text(c.displayTitle) },
-                                    onClick = {
-                                        courseFilter = c.id
-                                        filterExpanded = false
-                                    }
+                            if (courseFilter.isEmpty()) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = AppTheme.colors.accent,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
-                    }
-                }
-            }
 
-            val filteredItems = snapshot.items.filter { 
-                it.kind == selectedKind && (courseFilter.isEmpty() || it.courseID == courseFilter)
-            }.let { list ->
-                if (selectedKind == TeachingKind.ANNOUNCEMENT) {
-                    TeachingItem.newestFirst(list)
-                } else {
-                    list
-                }
-            }
-
-            if (filteredItems.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = "暂无${when(selectedKind) {
-                                TeachingKind.GRADE -> "成绩"
-                                TeachingKind.ASSIGNMENT -> "作业"
-                                TeachingKind.MATERIAL -> "资料课件"
-                                TeachingKind.ANNOUNCEMENT -> "通知"
-                            }}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Button(
-                            onClick = { scope.launch { store.refresh() } },
-                            enabled = !isRefreshing
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (isRefreshing) "正在同步..." else "从教学网同步最新数据")
-                        }
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 120.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Compact Action Bar for Assignment Tab
-                    if (selectedKind == TeachingKind.ASSIGNMENT && term != null && database != null) {
-                        item {
+                        // Courses list
+                        snapshot.courses.forEach { course ->
+                            IosFormDivider()
+                            val isSelected = courseFilter == course.id
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (!isBatchImporting) {
-                                            isBatchImporting = true
-                                            scope.launch {
-                                                try {
-                                                    val count = TeachingImporter.importAll(
-                                                        items = filteredItems,
-                                                        term = term,
-                                                        courses = courses,
-                                                        database = database
-                                                    )
-                                                    val msg = "已成功导入 $count 项作业至待办列表"
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    snackbarHostState.showSnackbar(msg)
-                                                } catch (e: Exception) {
-                                                    val msg = "导入失败: ${e.localizedMessage}"
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    snackbarHostState.showSnackbar(msg)
-                                                } finally {
-                                                    isBatchImporting = false
-                                                }
-                                            }
-                                        }
-                                    },
-                                    enabled = !isBatchImporting,
-                                    modifier = Modifier.weight(1f).height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    if (isBatchImporting) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("导入中...", style = MaterialTheme.typography.labelMedium)
-                                    } else {
-                                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("一键导入全部作业", style = MaterialTheme.typography.labelMedium)
+                                    .iosPressable {
+                                        courseFilter = course.id
+                                        showCoursePickerSheet = false
                                     }
-                                }
-
-                                OutlinedButton(
-                                    onClick = { scope.launch { store.refresh() } },
-                                    enabled = !isRefreshing,
-                                    modifier = Modifier.height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(if (isRefreshing) "同步中" else "同步作业", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                    }
-
-                    // Compact Action Bar for Material Tab
-                    if (selectedKind == TeachingKind.MATERIAL && filteredItems.any { it.attachments.isNotEmpty() }) {
-                        val allAttachments = filteredItems.flatMap { item -> item.attachments.map { att -> Pair(att, item) } }
-                        item {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (!isBatchDownloading) {
-                                            isBatchDownloading = true
-                                            scope.launch {
-                                                try {
-                                                    var succ = 0
-                                                    var fail = 0
-                                                    for ((att, sourceItem) in allAttachments) {
-                                                        if (!TeachingDownloader.isDownloaded(context, att.name)) {
-                                                            val res = TeachingDownloader.download(
-                                                                context = context,
-                                                                url = att.url,
-                                                                suggestedFileName = att.name,
-                                                                referer = sourceItem.sourceURL
-                                                            )
-                                                            if (res.isSuccess) succ++ else fail++
-                                                        }
-                                                    }
-                                                    val msg = "批量下载完成: 成功 $succ 个${if (fail > 0) "，失败 $fail 个" else ""}"
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    snackbarHostState.showSnackbar(msg)
-                                                } catch (e: Exception) {
-                                                    val msg = "批量下载出错: ${e.localizedMessage}"
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    snackbarHostState.showSnackbar(msg)
-                                                } finally {
-                                                    isBatchDownloading = false
-                                                }
-                                            }
-                                        }
-                                    },
-                                    enabled = !isBatchDownloading,
-                                    modifier = Modifier.weight(1f).height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    if (isBatchDownloading) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.onPrimary
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("下载中...", style = MaterialTheme.typography.labelMedium)
-                                    } else {
-                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("一键下载全部资料 (${allAttachments.size})", style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-
-                                OutlinedButton(
-                                    onClick = { scope.launch { store.refresh() } },
-                                    enabled = !isRefreshing,
-                                    modifier = Modifier.height(42.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(if (isRefreshing) "同步中" else "同步资料", style = MaterialTheme.typography.labelMedium)
-                                }
-                            }
-                        }
-                    }
-
-                    // Compact Action Bar for Announcement Tab
-                    if (selectedKind == TeachingKind.ANNOUNCEMENT && filteredItems.isNotEmpty()) {
-                        item {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { store.markAllAnnouncementsRead() },
-                                    modifier = Modifier.height(36.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text("全部已读", style = MaterialTheme.typography.labelSmall)
-                                }
-
-                                OutlinedButton(
-                                    onClick = { scope.launch { store.refresh() } },
-                                    enabled = !isRefreshing,
-                                    modifier = Modifier.height(36.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(if (isRefreshing) "同步中" else "同步通知", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-
-                    // Item lists
-                    items(filteredItems) { item ->
-                        when (selectedKind) {
-                            TeachingKind.ASSIGNMENT -> {
-                                AssignmentCard(
-                                    item = item,
-                                    isImported = importedSet.contains(item.id),
-                                    onOpenDetail = {
-                                        store.markRead(item.id)
-                                        selectedItemId = item.id
-                                    },
-                                    onQuickImport = {
-                                        if (term != null && database != null) {
-                                            scope.launch {
-                                                val matched = TeachingImporter.findMatchingCourse(item, courses)
-                                                val created = TeachingImporter.apply(
-                                                    item = item,
-                                                    term = term,
-                                                    course = matched,
-                                                    database = database
-                                                )
-                                                if (created != null) {
-                                                    val courseName = matched?.name?.let { " (关联: $it)" } ?: ""
-                                                    snackbarHostState.showSnackbar("已成功导入作业「${item.title}」$courseName")
-                                                }
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                            TeachingKind.MATERIAL -> {
-                                MaterialCard(
-                                    item = item,
-                                    downloadStates = downloadStates,
-                                    onOpenDetail = {
-                                        store.markRead(item.id)
-                                        selectedItemId = item.id
-                                    },
-                                    onDownloadAttachment = { attName, attUrl ->
-                                        scope.launch {
-                                            val res = TeachingDownloader.download(
-                                                context = context,
-                                                url = attUrl,
-                                                suggestedFileName = attName,
-                                                referer = item.sourceURL
-                                            )
-                                            if (res.isSuccess) {
-                                                val msg = "「$attName」下载成功！已存入系统下载目录。"
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                snackbarHostState.showSnackbar(msg)
-                                            } else {
-                                                val msg = "下载失败: ${res.exceptionOrNull()?.message}"
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                snackbarHostState.showSnackbar(msg)
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                            TeachingKind.GRADE -> {
-                                GradeCard(
-                                    item = item,
-                                    onOpenDetail = {
-                                        selectedItemId = item.id
-                                    }
-                                )
-                            }
-                            TeachingKind.ANNOUNCEMENT -> {
-                                val isUnread = !snapshot.readKeys.contains(item.id) && !snapshot.readKeys.contains(item.itemReadKey)
-                                AnnouncementCard(
-                                    item = item,
-                                    isUnread = isUnread,
-                                    onOpenDetail = {
-                                        store.markRead(item.id)
-                                        store.markRead(item.itemReadKey)
-                                        selectedItemId = item.id
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AssignmentCard(
-    item: TeachingItem,
-    isImported: Boolean,
-    onOpenDetail: () -> Unit,
-    onQuickImport: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
-        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = item.displayCourseTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                if (isImported) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                "已导入",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (item.dueDate != null) {
-                Text(
-                    text = "截止: ${DateFormatUtil.formatDateTime(item.dueDate)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                if (item.attachments.isNotEmpty()) {
-                    Text(
-                        "📎 附件 (${item.attachments.size})",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                } else {
-                    Spacer(Modifier.width(1.dp))
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
-                        onClick = onQuickImport,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text(if (isImported) "重新导入" else "⚡ 一键导入", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MaterialCard(
-    item: TeachingItem,
-    downloadStates: Map<String, DownloadStatus>,
-    onOpenDetail: () -> Unit,
-    onDownloadAttachment: (name: String, url: String) -> Unit
-) {
-    val context = LocalContext.current
-
-    Card(
-        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
-        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = item.displayCourseTitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (item.publishedText != null) {
-                Text(
-                    text = item.publishedText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-
-            // Direct download list for attachments
-            if (item.attachments.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            "课件/资料附件 (${item.attachments.size})",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        item.attachments.forEach { att ->
-                            val localFile = TeachingDownloader.getDownloadedFile(context, att.name)
-                            val state = downloadStates[att.url] ?: DownloadStatus.Idle
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
+                                Text(
+                                    text = course.displayTitle,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                                    ),
+                                    color = if (isSelected) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (isSelected) {
+                                    Spacer(Modifier.width(8.dp))
                                     Icon(
-                                        Icons.Default.AttachFile,
+                                        Icons.Default.Check,
                                         contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        tint = AppTheme.colors.accent,
+                                        modifier = Modifier.size(20.dp)
                                     )
-                                    Text(
-                                        att.name,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                if (state is DownloadStatus.Downloading) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else if (localFile != null || state is DownloadStatus.Success) {
-                                    val file = localFile ?: (state as DownloadStatus.Success).file
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        FilledTonalButton(
-                                            onClick = {
-                                                if (!TeachingDownloader.openFile(context, file)) {
-                                                    Toast.makeText(context, "无法打开此文件类型", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                            modifier = Modifier.height(28.dp)
-                                        ) {
-                                            Text("打开", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                        IconButton(
-                                            onClick = { TeachingDownloader.shareFile(context, file) },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(Icons.Default.Share, contentDescription = "分享", modifier = Modifier.size(16.dp))
-                                        }
-                                    }
-                                } else {
-                                    FilledTonalButton(
-                                        onClick = { onDownloadAttachment(att.name, att.url) },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                        modifier = Modifier.height(28.dp)
-                                    ) {
-                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(Modifier.width(2.dp))
-                                        Text("直接下载", style = MaterialTheme.typography.labelSmall)
-                                    }
                                 }
                             }
                         }
@@ -796,262 +583,225 @@ private fun MaterialCard(
     }
 }
 
+/**
+ * Unified authentic iOS Item Card for Teaching Hub
+ */
 @Composable
-private fun AnnouncementCard(
+private fun TeachingItemCard(
     item: TeachingItem,
+    isImported: Boolean,
     isUnread: Boolean,
-    onOpenDetail: () -> Unit
+    onOpen: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().iosPressable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
-        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .cardBackground(cornerRadius = 14.dp)
+            .iosPressable(onClick = onOpen)
+            .padding(14.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Unread indicator dot (7dp circle)
+            if ((item.kind == TeachingKind.GRADE || item.kind == TeachingKind.ANNOUNCEMENT) && isUnread) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(AppTheme.colors.accent, CircleShape)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (isUnread) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(AppTheme.colors.accent, CircleShape)
-                    )
-                }
+                // Item title
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
-            val pubDisplay = when {
-                pubTime != null -> DateFormatUtil.formatDateTime(pubTime)
-                !item.publishedText.isNullOrBlank() -> item.publishedText.replace("发布者:", "").trim()
-                else -> null
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = item.displayCourseTitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                if (pubDisplay != null) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = pubDisplay,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
-            if (item.body.isNotBlank()) {
-                Text(
-                    text = item.body,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-            if (item.attachments.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AttachFile,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "${item.attachments.size} 个附件",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
-@Composable
-private fun GradeCard(
-    item: TeachingItem,
-    onOpenDetail: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .iosPressable { onOpenDetail() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surface),
-        border = BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.4f))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = item.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = item.displayCourseTitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (!item.gradeCategory.isNullOrBlank()) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
-                            ) {
+                // Course title
+                Text(
+                    text = item.displayCourseTitle,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Meta row based on kind
+                when (item.kind) {
+                    TeachingKind.GRADE -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (!item.gradeCategory.isNullOrBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                ) {
+                                    Text(
+                                        text = item.gradeCategory,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (!item.feedback.isNullOrBlank()) {
                                 Text(
-                                    text = item.gradeCategory,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    text = "💬 教师评语",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = AppTheme.colors.accent
                                 )
                             }
                         }
                     }
+                    TeachingKind.ASSIGNMENT -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (item.dueDate != null) {
+                                Text(
+                                    text = DateFormatUtil.formatDateTime(item.dueDate),
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = AppTheme.colors.accent
+                                )
+                            } else {
+                                Text(
+                                    text = "未提供截止时间",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                            if (isImported) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = AppTheme.colors.accent.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = "已导入",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        ),
+                                        color = AppTheme.colors.accent,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (item.attachments.isNotEmpty()) {
+                                Text(
+                                    text = "📎 ${item.attachments.size} 个文件",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    TeachingKind.MATERIAL -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
+                            if (pubTime != null) {
+                                Text(
+                                    text = DateFormatUtil.formatDateTime(pubTime),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (item.attachments.isNotEmpty()) {
+                                Text(
+                                    text = "📎 ${item.attachments.size} 个文件",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    TeachingKind.ANNOUNCEMENT -> {
+                        val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
+                        if (pubTime != null) {
+                            Text(
+                                text = DateFormatUtil.formatDateTime(pubTime),
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
+            }
 
-                Spacer(Modifier.width(8.dp))
-
-                // Score Badge
+            // Right side: Score badge for GRADE
+            if (item.kind == TeachingKind.GRADE) {
                 val hasScore = !item.score.isNullOrBlank()
                 val isPending = item.gradeStatus == "待评分" || item.score == "待评分"
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = when {
-                        isPending -> MaterialTheme.colorScheme.tertiaryContainer
-                        hasScore -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceVariant
+                        isPending -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+                        hasScore -> AppTheme.colors.accent.copy(alpha = 0.12f)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.Bottom,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         if (isPending) {
                             Text(
                                 text = "待评分",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         } else if (hasScore) {
                             Text(
                                 text = item.score!!,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = AppTheme.colors.accent
                             )
                             if (!item.pointsPossible.isNullOrBlank()) {
                                 Text(
-                                    text = " / ${item.pointsPossible}",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = "/${item.pointsPossible}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(bottom = 2.dp)
+                                    modifier = Modifier.padding(bottom = 1.dp)
                                 )
                             }
                         } else {
                             Text(
                                 text = "未出分",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.outline
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         }
                     }
                 }
             }
 
-            // Feedback snippet if present
-            if (!item.feedback.isNullOrBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "💬 教师评语: ${item.feedback}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            // Footer: Date and details hint
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                val pubTime = item.publishedAt ?: item.publishedText?.let { TeachingParser.parseDate(it)?.time }
-                val dateDisplay = when {
-                    pubTime != null -> DateFormatUtil.formatDateTime(pubTime)
-                    !item.publishedText.isNullOrBlank() -> item.publishedText
-                    else -> null
-                }
-                if (dateDisplay != null) {
-                    Text(
-                        text = "活动时间: $dateDisplay",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                } else {
-                    Spacer(Modifier.width(1.dp))
-                }
-
-                Text(
-                    text = "查看详情 ▾",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+            // Subtle iOS chevron
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

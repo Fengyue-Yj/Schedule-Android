@@ -10,8 +10,23 @@ import java.util.TimeZone
 import java.util.Date
 
 object TeachingParser {
-    private fun isLogin(html: String): Boolean {
-        return html.contains("id=\"loginForm\"") || html.contains("name=\"password\"") || html.contains("iaaa.pku.edu.cn/iaaa/oauth.jsp")
+    fun isLogin(html: String): Boolean {
+        val lower = html.lowercase()
+        return lower.contains("id=\"loginform\"") ||
+               lower.contains("name=\"password\"") ||
+               lower.contains("id=\"password\"") ||
+               lower.contains("id=\"logpass\"") ||
+               lower.contains("name=\"logpass\"") ||
+               lower.contains("name=\"username\"") ||
+               lower.contains("id=\"user_name\"") ||
+               lower.contains("iaaa.pku.edu.cn") ||
+               lower.contains("oauth.jsp") ||
+               lower.contains("统一身份认证") ||
+               lower.contains("请重新登录") ||
+               lower.contains("会话已过期") ||
+               lower.contains("用户登录") ||
+               lower.contains("login_wrapper") ||
+               lower.contains("/iaaa/resources")
     }
 
     fun parseCourses(html: String): List<TeachingCourse> {
@@ -54,6 +69,12 @@ object TeachingParser {
                     result.add(TeachingCourse(id, courseTitle, true))
                 }
             }
+        }
+
+        // Safety check: if result is empty AND document lacks Blackboard portal containers
+        val containers = doc.select("div.portlet, ul.courseListing, #courseMenuPalette_contents, #global-nav-link, .portletList, #module\\:_1_1")
+        if (result.isEmpty() && containers.isEmpty()) {
+            throw TeachingError.LoginRequired
         }
 
         return result

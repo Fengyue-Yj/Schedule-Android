@@ -253,6 +253,7 @@ fun IosFormTextFieldRow(
 fun IosFormRow(
     label: String,
     value: String? = null,
+    labelColor: Color = MaterialTheme.colorScheme.onSurface,
     valueColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
     leadingIcon: (@Composable () -> Unit)? = null,
     showChevron: Boolean = true,
@@ -276,7 +277,7 @@ fun IosFormRow(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
+                color = labelColor
             )
         }
 

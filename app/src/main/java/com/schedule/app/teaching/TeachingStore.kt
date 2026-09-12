@@ -54,13 +54,17 @@ class TeachingStore private constructor(private val context: Context) {
     suspend fun refresh() = withContext(Dispatchers.IO) {
         if (!session.isLoggedIn()) {
             _isSignedIn.value = false
-            return@withContext
+            _message.value = "未登录或登录已失效，请重新连接教学网"
+            throw TeachingError.LoginRequired
         }
         _isRefreshing.value = true
-        _message.value = "正在获取教学网课程列表..."
+        _message.value = "正在连接教学网并获取课程列表..."
         try {
             val homeHtml = session.get(TeachingURLs.home)
             val allCourses = TeachingParser.parseCourses(homeHtml)
+            if (allCourses.isEmpty()) {
+                throw TeachingError.LoginRequired
+            }
             val currentCourses = allCourses.filter { it.isCurrent }
             val chosen = if (currentCourses.isNotEmpty()) currentCourses else allCourses
             val replacement = _snapshot.value.items.toMutableList()
@@ -83,18 +87,22 @@ class TeachingStore private constructor(private val context: Context) {
             val newSnap = _snapshot.value.copy(
                 courses = chosen,
                 items = replacement.filter { allowedCourseIds.contains(it.courseID) },
-                fetchedAt = if (successfulCourses > 0 || chosen.isEmpty()) System.currentTimeMillis() else _snapshot.value.fetchedAt
+                fetchedAt = if (successfulCourses > 0) System.currentTimeMillis() else _snapshot.value.fetchedAt
             )
             saveSnapshot(newSnap)
             _isSignedIn.value = true
+            _message.value = null
         } catch (e: Exception) {
-            _message.value = "同步失败: ${e.message}"
-            if (e is TeachingError.LoginRequired) {
+            e.printStackTrace()
+            if (e is TeachingError.LoginRequired || e.message?.contains("LoginRequired") == true || e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 _isSignedIn.value = false
+                _message.value = "登录已过期，请点击重新登录"
+            } else {
+                _message.value = "同步失败: ${e.localizedMessage ?: "网络连接异常"}"
             }
+            throw e
         } finally {
             _isRefreshing.value = false
-            _message.value = null
         }
     }
 
@@ -228,7 +236,11 @@ class TeachingStore private constructor(private val context: Context) {
         // Match original iOS: 300 seconds (5 minutes) cache TTL
         val isCacheStale = System.currentTimeMillis() - _snapshot.value.fetchedAt > 300_000L
         if (_snapshot.value.items.isEmpty() || hasNoGrades || isCacheStale) {
-            refresh()
+            try {
+                refresh()
+            } catch (e: Exception) {
+                // Background refresh exception recorded in _message and _isSignedIn
+            }
         } else {
             _isSignedIn.value = true
         }

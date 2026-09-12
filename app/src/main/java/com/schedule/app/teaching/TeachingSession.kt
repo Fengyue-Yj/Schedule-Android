@@ -52,6 +52,10 @@ class TeachingSession {
                 // Persist any Set-Cookie headers
                 saveCookiesFromHeaders(currentUrl, connection)
 
+                if (responseCode == 401 || responseCode == 403) {
+                    throw TeachingError.LoginRequired
+                }
+
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location")
                     if (!location.isNullOrBlank()) {
@@ -59,6 +63,9 @@ class TeachingSession {
                             location
                         } else {
                             URL(URL(currentUrl), location).toString()
+                        }
+                        if (isLoginUrl(resolved)) {
+                            throw TeachingError.LoginRequired
                         }
                         currentUrl = resolved
                         redirectCount++
@@ -78,14 +85,47 @@ class TeachingSession {
             }
         }
 
+        if (isLoginUrl(currentUrl)) {
+            throw TeachingError.LoginRequired
+        }
+
         val html = finalHtml ?: throw TeachingError.NetworkError("Failed to load page (Too many redirects)")
 
-        // Check if redirected to login page
-        if (html.contains("id=\"loginForm\"") || html.contains("name=\"password\"") || html.contains("iaaa.pku.edu.cn/iaaa/oauth.jsp")) {
+        // Check if redirected to login page or content indicates login required
+        if (isLoginHtml(html)) {
             throw TeachingError.LoginRequired
         }
 
         html
+    }
+
+    private fun isLoginUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains("iaaa.pku.edu.cn") ||
+               lower.contains("/iaaa/") ||
+               lower.contains("oauth.jsp") ||
+               lower.contains("/webapps/login") ||
+               lower.contains("login.jsp") ||
+               lower.contains("login.pku.edu.cn")
+    }
+
+    private fun isLoginHtml(html: String): Boolean {
+        val lower = html.lowercase()
+        return lower.contains("id=\"loginform\"") ||
+               lower.contains("name=\"password\"") ||
+               lower.contains("id=\"password\"") ||
+               lower.contains("id=\"logpass\"") ||
+               lower.contains("name=\"logpass\"") ||
+               lower.contains("name=\"username\"") ||
+               lower.contains("id=\"user_name\"") ||
+               lower.contains("iaaa.pku.edu.cn") ||
+               lower.contains("oauth.jsp") ||
+               lower.contains("统一身份认证") ||
+               lower.contains("请重新登录") ||
+               lower.contains("会话已过期") ||
+               lower.contains("用户登录") ||
+               lower.contains("login_wrapper") ||
+               lower.contains("/iaaa/resources")
     }
 
     suspend fun getOrNull(urlString: String): String? = try {

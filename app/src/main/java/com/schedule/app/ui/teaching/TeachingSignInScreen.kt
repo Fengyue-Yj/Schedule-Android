@@ -12,11 +12,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.schedule.app.teaching.TeachingURLs
+import com.schedule.app.ui.components.iosPressable
 import com.schedule.app.ui.theme.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,26 +35,60 @@ fun TeachingSignInScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("北大教学网登录") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = {
-                        CookieManager.getInstance().flush()
-                        val cookies = CookieManager.getInstance().getCookie("https://course.pku.edu.cn")
-                        if (!cookies.isNullOrBlank() && !hasSignedIn) {
-                            hasSignedIn = true
-                            onSignInSuccess()
-                        }
-                    }) {
-                        Text("连接", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .background(AppTheme.colors.background)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "取消",
+                        color = AppTheme.colors.accent,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                        modifier = Modifier
+                            .iosPressable(onClick = onNavigateBack)
+                            .padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
+                    Text(
+                        text = "北大教学网登录",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "连接",
+                        color = AppTheme.colors.accent,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        ),
+                        modifier = Modifier
+                            .iosPressable(onClick = {
+                                CookieManager.getInstance().flush()
+                                val cookies = CookieManager.getInstance().getCookie("https://course.pku.edu.cn")
+                                if (!cookies.isNullOrBlank() && !hasSignedIn) {
+                                    hasSignedIn = true
+                                    onSignInSuccess()
+                                }
+                            })
+                            .padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
                 }
-            )
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = AppTheme.colors.border.copy(alpha = 0.35f)
+                )
+            }
         }
     ) { padding ->
         Column(

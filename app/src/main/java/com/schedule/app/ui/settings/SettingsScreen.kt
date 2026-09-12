@@ -1,33 +1,36 @@
 package com.schedule.app.ui.settings
 
+import android.app.DatePickerDialog
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.schedule.app.data.AppDatabase
-import com.schedule.app.data.models.CourseEntity
 import com.schedule.app.data.models.SettingEntity
 import com.schedule.app.data.models.TermSeason
+import com.schedule.app.ui.components.*
 import com.schedule.app.ui.teaching.TeachingHubScreen
 import com.schedule.app.ui.theme.AppTheme
 import com.schedule.app.util.CalendarManager
 import com.schedule.app.util.CourseImporter
-import com.schedule.app.util.ImportSummary
 import com.schedule.app.util.TermDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,17 +52,16 @@ fun SettingsScreen(
     val allTerms by database.settingDao().getAll().collectAsState(initial = listOf(term))
 
     var currentDraft by remember(term) { mutableStateOf(TermDraft(term)) }
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var showManageSemestersDialog by remember { mutableStateOf(false) }
+    var showSwitchSemesterSheet by remember { mutableStateOf(false) }
+    var showCreateSheet by remember { mutableStateOf(false) }
+    var showManageSemestersSheet by remember { mutableStateOf(false) }
     var termToEdit by remember { mutableStateOf<SettingEntity?>(null) }
     var termToDelete by remember { mutableStateOf<SettingEntity?>(null) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showTeachingHub by remember { mutableStateOf(false) }
-    var importResult by remember { mutableStateOf<ImportSummary?>(null) }
-    var importError by remember { mutableStateOf<String?>(null) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
 
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val dateFormatChinese = remember { SimpleDateFormat("yyyy年M月d日", Locale.CHINA) }
 
     // CSV File Picker
     val csvPicker = rememberLauncherForActivityResult(
@@ -81,12 +83,16 @@ fun SettingsScreen(
                             courseDao = database.courseDao(),
                             meetingDao = database.courseMeetingDao()
                         )
-                        importResult = summary
+                        Toast.makeText(
+                            context,
+                            summary.message,
+                            Toast.LENGTH_LONG
+                        ).show()
                     } else {
-                        importError = "所选文件内容为空，请重新选择。"
+                        Toast.makeText(context, "所选文件内容为空，请重新选择", Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
-                    importError = e.localizedMessage ?: "导入日历/课表文件失败。"
+                    Toast.makeText(context, "导入失败: ${e.localizedMessage ?: "文件解析错误"}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -103,440 +109,608 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                actions = {
-                    TextButton(onClick = {
-                        coroutineScope.launch(Dispatchers.IO) {
-                            val updated = currentDraft.apply(term)
-                            database.settingDao().update(updated)
-                            withContext(Dispatchers.Main) {
-                                onTermChanged(updated)
-                                onDismiss()
-                            }
-                        }
-                    }) {
-                        Text("Done", fontWeight = FontWeight.Bold, color = AppTheme.colors.accent)
-                    }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .background(AppTheme.colors.background)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "取消",
+                        color = AppTheme.colors.accent,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                        modifier = Modifier
+                            .iosPressable(onClick = onDismiss)
+                            .padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
+
+                    Text(
+                        text = "设置",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = "完成",
+                        color = AppTheme.colors.accent,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
+                        ),
+                        modifier = Modifier
+                            .iosPressable(onClick = {
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    val updated = currentDraft.apply(term)
+                                    database.settingDao().update(updated)
+                                    withContext(Dispatchers.Main) {
+                                        onTermChanged(updated)
+                                        onDismiss()
+                                    }
+                                }
+                            })
+                            .padding(vertical = 8.dp, horizontal = 4.dp)
+                    )
                 }
-            )
-        }
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = AppTheme.colors.border.copy(alpha = 0.35f)
+                )
+            }
+        },
+        containerColor = AppTheme.colors.background
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            // Semesters Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Semesters", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    
-                    var expandedDropdown by remember { mutableStateOf(false) }
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { expandedDropdown = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Current: ${term.displayName}")
-                        }
-                        DropdownMenu(
-                            expanded = expandedDropdown,
-                            onDismissRequest = { expandedDropdown = false }
-                        ) {
-                            allTerms.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(item.displayName) },
-                                    onClick = {
-                                        onTermChanged(item)
-                                        expandedDropdown = false
-                                    }
-                                )
-                            }
-                        }
-                    }
+            // 1. SEMESTERS Section
+            IosFormSection(
+                headerText = "Semesters",
+                footerText = "各学期的课表、作业、考试与设置互相独立沙盒隔离。切换学期将放弃下方未保存的修改。"
+            ) {
+                IosFormRow(
+                    label = "当前学期",
+                    value = term.displayName,
+                    onClick = { showSwitchSemesterSheet = true }
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "+ 创建新学期",
+                    labelColor = AppTheme.colors.accent,
+                    showChevron = false,
+                    onClick = { showCreateSheet = true }
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "管理全部学期",
+                    onClick = { showManageSemestersSheet = true }
+                )
+            }
 
-                    Button(
-                        onClick = { showCreateDialog = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Create Semester")
+            // 2. SEMESTER DETAILS Section
+            IosFormSection(headerText = "Semester Details") {
+                IosFormTextFieldRow(
+                    label = "学期名称",
+                    value = currentDraft.name,
+                    onValueChange = { currentDraft = currentDraft.copy(name = it) },
+                    placeholder = term.displayName
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "第 1 周开学时间",
+                    value = dateFormatChinese.format(currentDraft.startDate),
+                    onClick = {
+                        val cal = Calendar.getInstance().apply { timeInMillis = currentDraft.startDate }
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val selCal = Calendar.getInstance().apply {
+                                    set(year, month, dayOfMonth, 0, 0, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }
+                                val monday = CalendarManager.mondayOnOrBefore(selCal.timeInMillis)
+                                currentDraft = currentDraft.copy(startDate = monday)
+                            },
+                            cal.get(Calendar.YEAR),
+                            cal.get(Calendar.MONTH),
+                            cal.get(Calendar.DAY_OF_MONTH)
+                        ).show()
                     }
-
-                    OutlinedButton(
-                        onClick = { showManageSemestersDialog = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.List, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Manage Semesters")
-                    }
-
+                )
+                IosFormDivider()
+                // Stepper Row: 学期总周数
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        text = "Courses, assignments, exams and settings are saved separately for each semester. Switching semesters discards unsaved settings below.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "学期总周数",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                }
-            }
-
-            // Semester Details Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Semester Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-
-                    OutlinedTextField(
-                        value = currentDraft.name,
-                        onValueChange = { currentDraft = currentDraft.copy(name = it) },
-                        label = { Text("Semester Name") },
-                        placeholder = { Text(term.displayName) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Week 1 Start Date
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column {
-                            Text("Week 1 Starts", style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                dateFormat.format(currentDraft.startDate),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        OutlinedButton(onClick = {
-                            val cal = Calendar.getInstance().apply { timeInMillis = currentDraft.startDate }
-                            cal.add(Calendar.DAY_OF_YEAR, -7)
-                            currentDraft = currentDraft.copy(startDate = CalendarManager.mondayOnOrBefore(cal.timeInMillis))
-                        }) {
-                            Text("-1 Wk")
-                        }
-                        OutlinedButton(onClick = {
-                            val cal = Calendar.getInstance().apply { timeInMillis = currentDraft.startDate }
-                            cal.add(Calendar.DAY_OF_YEAR, 7)
-                            currentDraft = currentDraft.copy(startDate = CalendarManager.mondayOnOrBefore(cal.timeInMillis))
-                        }) {
-                            Text("+1 Wk")
-                        }
-                    }
-
-                    // Total Weeks Stepper
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Total Weeks: ${currentDraft.totalWeeks}", style = MaterialTheme.typography.bodyMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(
-                                onClick = {
-                                    if (currentDraft.totalWeeks > 1) {
-                                        currentDraft = currentDraft.copy(totalWeeks = currentDraft.totalWeeks - 1)
-                                    }
+                        Text(
+                            text = "${currentDraft.totalWeeks} 周",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.35f))
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .iosPressable {
+                                            if (currentDraft.totalWeeks > 1) {
+                                                currentDraft = currentDraft.copy(totalWeeks = currentDraft.totalWeeks - 1)
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("-", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.accent)
                                 }
-                            ) {
-                                Text("-")
-                            }
-                            FilledTonalButton(
-                                onClick = {
-                                    if (currentDraft.totalWeeks < 52) {
-                                        currentDraft = currentDraft.copy(totalWeeks = currentDraft.totalWeeks + 1)
-                                    }
+                                Box(
+                                    modifier = Modifier
+                                        .width(0.5.dp)
+                                        .height(20.dp)
+                                        .background(AppTheme.colors.border.copy(alpha = 0.4f))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .iosPressable {
+                                            if (currentDraft.totalWeeks < 52) {
+                                                currentDraft = currentDraft.copy(totalWeeks = currentDraft.totalWeeks + 1)
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("+", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.accent)
                                 }
-                            ) {
-                                Text("+")
                             }
                         }
                     }
-
-                    // Season Selector
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("Season:", style = MaterialTheme.typography.bodyMedium)
-                        TermSeason.entries.forEach { season ->
-                            FilterChip(
-                                selected = currentDraft.season == season,
-                                onClick = { currentDraft = currentDraft.copy(season = season) },
-                                label = { Text(season.displayName) }
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = currentDraft.grade,
-                        onValueChange = { currentDraft = currentDraft.copy(grade = it) },
-                        label = { Text("Grade / Year (Optional)") },
-                        placeholder = { Text("e.g. 2024") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
-            }
-
-            // Schedule View Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Schedule View", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Show Weekends (Sat / Sun)", style = MaterialTheme.typography.bodyMedium)
-                        Switch(
-                            checked = currentDraft.showWeekends,
-                            onCheckedChange = { currentDraft = currentDraft.copy(showWeekends = it) }
+                IosFormDivider()
+                IosFormTextFieldRow(
+                    label = "年级",
+                    value = currentDraft.grade,
+                    onValueChange = { currentDraft = currentDraft.copy(grade = it) },
+                    placeholder = "如: 大二 / 2024级"
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "季节",
+                    value = currentDraft.season.displayName,
+                    onClick = {
+                        currentDraft = currentDraft.copy(
+                            season = if (currentDraft.season == TermSeason.FALL) TermSeason.SPRING else TermSeason.FALL
                         )
                     }
-                }
+                )
             }
 
-            // Import Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("导入课表 / 日历文件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "支持标准课表 CSV 文件及 iCalendar (.ics) 日历文件。自动识别课程名称、教师、教室、星期及节次（如1-2节）。兼容 UTF-8、GBK 编码。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            // 3. SCHEDULE VIEW Section
+            IosFormSection(headerText = "Schedule View") {
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    AppSegmentedPicker(
+                        label = "课表显示模式",
+                        selection = currentDraft.showWeekends,
+                        options = listOf(true, false),
+                        title = { if (it) "显示周末" else "仅工作日" },
+                        onSelectionChange = { currentDraft = currentDraft.copy(showWeekends = it) },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedButton(
-                        onClick = { csvPicker.launch("*/*") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("选择 CSV / 日历文件导入")
-                    }
                 }
             }
 
-            // Connections Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Connections", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Button(
-                        onClick = { showTeachingHub = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("PKU Teaching Network")
-                    }
-                }
-            }
-
-            // Appearance Section
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Appearance", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    OutlinedButton(
-                        onClick = {
-                            coroutineScope.launch(Dispatchers.IO) {
-                                val courses = database.courseDao().getCoursesForTerm(term.id)
-                                courses.forEach { course ->
-                                    database.courseDao().update(course.copy(colorHex = "", colorSeed = (1..1000000).random()))
-                                }
-                                statusMessage = "Randomized colors for ${courses.size} courses."
+            // 4. DATA & APPEARANCE Section
+            IosFormSection(headerText = "Data & Appearance") {
+                IosFormRow(
+                    label = "导入 CSV 格式课表",
+                    onClick = { csvPicker.launch("*/*") }
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "重新随机课程颜色",
+                    showChevron = false,
+                    onClick = {
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val courses = database.courseDao().getCoursesForTerm(term.id)
+                            courses.forEach { course ->
+                                database.courseDao().update(course.copy(colorHex = "", colorSeed = (1..1000000).random()))
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Randomize Course Colors")
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "已重新随机生成 ${courses.size} 门课程颜色", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
-                }
+                )
+                IosFormDivider()
+                IosFormRow(
+                    label = "北大教学网",
+                    onClick = { showTeachingHub = true }
+                )
             }
 
-            // Data Section
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+            // 5. DATA (Destructive) Section
+            IosFormSection(
+                headerText = "Data",
+                footerText = "导入课表、随机颜色与清空数据将立即生效，其他学期数据不受影响。"
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Data Management", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
-                    Button(
-                        onClick = { showClearDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Clear Current Semester Data")
-                    }
-                }
+                IosFormRow(
+                    label = "清空当前学期数据",
+                    labelColor = MaterialTheme.colorScheme.error,
+                    showChevron = false,
+                    onClick = { showClearDialog = true }
+                )
             }
 
             Spacer(Modifier.height(32.dp))
         }
     }
 
-    // Create Semester Dialog
-    if (showCreateDialog) {
-        var newName by remember { mutableStateOf("") }
-        var newSeason by remember { mutableStateOf(TermSeason.FALL) }
-        var newWeeks by remember { mutableIntStateOf(20) }
+    // Switch Semester Sheet
+    if (showSwitchSemesterSheet) {
+        IosModalBottomSheet(
+            onDismissRequest = { showSwitchSemesterSheet = false }
+        ) {
+            IosSheetHeader(
+                title = "切换学期",
+                leftActionText = "关闭",
+                onLeftAction = { showSwitchSemesterSheet = false }
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                IosFormSection {
+                    allTerms.forEachIndexed { index, item ->
+                        if (index > 0) IosFormDivider()
+                        IosFormRow(
+                            label = item.displayName,
+                            leadingIcon = if (item.id == term.id) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "当前选中",
+                                        tint = AppTheme.colors.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            } else null,
+                            value = "${dateFormat.format(item.termStartDate)} · ${item.totalWeeks}周",
+                            showChevron = false,
+                            onClick = {
+                                onTermChanged(item)
+                                currentDraft = TermDraft(item)
+                                showSwitchSemesterSheet = false
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
 
-        AlertDialog(
-            onDismissRequest = { showCreateDialog = false },
-            title = { Text("New Semester") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Semester Name") },
-                        placeholder = { Text("e.g. 2026 Fall") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TermSeason.entries.forEach { s ->
-                            FilterChip(
-                                selected = newSeason == s,
-                                onClick = { newSeason = s },
-                                label = { Text(s.displayName) }
-                            )
+    // Manage Semesters Sheet
+    if (showManageSemestersSheet) {
+        IosModalBottomSheet(
+            onDismissRequest = { showManageSemestersSheet = false }
+        ) {
+            IosSheetHeader(
+                title = "全部学期",
+                leftActionText = "完成",
+                onLeftAction = { showManageSemestersSheet = false },
+                rightActionText = "+ 新建",
+                onRightAction = { showCreateSheet = true }
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                IosFormSection {
+                    allTerms.forEachIndexed { index, item ->
+                        if (index > 0) IosFormDivider()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .iosPressable {
+                                    onTermChanged(item)
+                                    currentDraft = TermDraft(item)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                if (item.id == term.id) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "当前学期",
+                                        tint = AppTheme.colors.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.size(18.dp))
+                                }
+                                Column {
+                                    Text(
+                                        text = item.displayName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "第1周: ${dateFormat.format(item.termStartDate)} · 共${item.totalWeeks}周 · ${TermSeason.fromString(item.termSeason).displayName}",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(onClick = { termToEdit = item }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "编辑",
+                                        tint = AppTheme.colors.accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                if (allTerms.size > 1) {
+                                    IconButton(onClick = { termToDelete = item }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "删除",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        coroutineScope.launch(Dispatchers.IO) {
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+
+    // Term Editor Sheet (Create or Edit)
+    val editingTarget = termToEdit
+    if (showCreateSheet || editingTarget != null) {
+        val isNew = showCreateSheet
+        var editName by remember(isNew, editingTarget) {
+            mutableStateOf(if (isNew) "" else (editingTarget?.name ?: ""))
+        }
+        var editWeeks by remember(isNew, editingTarget) {
+            mutableIntStateOf(if (isNew) 20 else (editingTarget?.totalWeeks ?: 20))
+        }
+        var editSeason by remember(isNew, editingTarget) {
+            mutableStateOf(
+                if (isNew) {
+                    if (Calendar.getInstance().get(Calendar.MONTH) >= Calendar.JULY) TermSeason.FALL else TermSeason.SPRING
+                } else {
+                    try { TermSeason.valueOf(editingTarget!!.termSeason) } catch(e: Exception) { TermSeason.FALL }
+                }
+            )
+        }
+        var editStartDate by remember(isNew, editingTarget) {
+            mutableLongStateOf(
+                if (isNew) CalendarManager.mondayOnOrBefore(System.currentTimeMillis())
+                else (editingTarget?.termStartDate ?: System.currentTimeMillis())
+            )
+        }
+        var editGrade by remember(isNew, editingTarget) {
+            mutableStateOf(if (isNew) "" else (editingTarget?.grade ?: ""))
+        }
+
+        IosModalBottomSheet(
+            onDismissRequest = {
+                showCreateSheet = false
+                termToEdit = null
+            }
+        ) {
+            IosSheetHeader(
+                title = if (isNew) "新建学期" else "编辑学期",
+                leftActionText = "取消",
+                onLeftAction = {
+                    showCreateSheet = false
+                    termToEdit = null
+                },
+                rightActionText = "保存",
+                rightActionEnabled = editName.trim().isNotEmpty(),
+                onRightAction = {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        if (isNew) {
                             val draft = TermDraft().copy(
-                                name = newName.trim(),
-                                season = newSeason,
-                                totalWeeks = newWeeks
+                                name = editName.trim(),
+                                season = editSeason,
+                                totalWeeks = editWeeks,
+                                startDate = CalendarManager.mondayOnOrBefore(editStartDate),
+                                grade = editGrade.trim()
                             )
                             val newSetting = draft.makeSetting()
                             database.settingDao().insert(newSetting)
                             withContext(Dispatchers.Main) {
                                 onTermChanged(newSetting)
-                                showCreateDialog = false
+                                currentDraft = TermDraft(newSetting)
+                                showCreateSheet = false
                             }
-                        }
-                    },
-                    enabled = newName.trim().isNotEmpty()
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    // Manage Semesters Dialog
-    if (showManageSemestersDialog) {
-        AlertDialog(
-            onDismissRequest = { showManageSemestersDialog = false },
-            title = { Text("Semesters") },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    allTerms.forEach { item ->
-                        var menuExpanded by remember { mutableStateOf(false) }
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-                            color = if (item.id == term.id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(item.displayName, fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        "${dateFormat.format(item.termStartDate)} · ${item.totalWeeks} weeks",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                        } else if (editingTarget != null) {
+                            val updated = editingTarget.copy(
+                                name = editName.trim(),
+                                termSeason = editSeason.name,
+                                totalWeeks = editWeeks,
+                                termStartDate = CalendarManager.mondayOnOrBefore(editStartDate),
+                                grade = editGrade.trim()
+                            )
+                            database.settingDao().update(updated)
+                            withContext(Dispatchers.Main) {
+                                if (editingTarget.id == term.id) {
+                                    onTermChanged(updated)
+                                    currentDraft = TermDraft(updated)
                                 }
-                                if (item.id == term.id) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "Current",
-                                        tint = AppTheme.colors.accent,
-                                        modifier = Modifier.size(20.dp).padding(end = 4.dp)
-                                    )
-                                }
-                                Box {
-                                    IconButton(onClick = { menuExpanded = true }) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
-                                    }
-                                    DropdownMenu(
-                                        expanded = menuExpanded,
-                                        onDismissRequest = { menuExpanded = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Load Semester") },
-                                            onClick = {
-                                                menuExpanded = false
-                                                onTermChanged(item)
-                                                showManageSemestersDialog = false
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Edit Semester") },
-                                            onClick = {
-                                                menuExpanded = false
-                                                termToEdit = item
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("Delete Semester", color = if (allTerms.size > 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline) },
-                                            enabled = allTerms.size > 1,
-                                            onClick = {
-                                                menuExpanded = false
-                                                termToDelete = item
-                                            }
-                                        )
-                                    }
-                                }
+                                termToEdit = null
                             }
                         }
                     }
+                }
+            )
 
-                    Spacer(Modifier.height(8.dp))
-                    Button(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                IosFormSection {
+                    IosFormTextFieldRow(
+                        label = "学期名称",
+                        value = editName,
+                        onValueChange = { editName = it },
+                        placeholder = "如: 2026 秋季学期"
+                    )
+                    IosFormDivider()
+                    IosFormRow(
+                        label = "季节",
+                        value = editSeason.displayName,
                         onClick = {
-                            showManageSemestersDialog = false
-                            showCreateDialog = true
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                            editSeason = if (editSeason == TermSeason.FALL) TermSeason.SPRING else TermSeason.FALL
+                        }
+                    )
+                    IosFormDivider()
+                    IosFormRow(
+                        label = "第 1 周开学时间",
+                        value = dateFormatChinese.format(editStartDate),
+                        onClick = {
+                            val cal = Calendar.getInstance().apply { timeInMillis = editStartDate }
+                            DatePickerDialog(
+                                context,
+                                { _, year, month, dayOfMonth ->
+                                    val selCal = Calendar.getInstance().apply {
+                                        set(year, month, dayOfMonth, 0, 0, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }
+                                    editStartDate = CalendarManager.mondayOnOrBefore(selCal.timeInMillis)
+                                },
+                                cal.get(Calendar.YEAR),
+                                cal.get(Calendar.MONTH),
+                                cal.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        }
+                    )
+                    IosFormDivider()
+                    // Stepper for total weeks
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Create Semester")
+                        Text(
+                            text = "学期总周数",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "$editWeeks 周",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                border = androidx.compose.foundation.BorderStroke(0.5.dp, AppTheme.colors.border.copy(alpha = 0.35f))
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .iosPressable { if (editWeeks > 1) editWeeks-- },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("-", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.accent)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .width(0.5.dp)
+                                            .height(20.dp)
+                                            .background(AppTheme.colors.border.copy(alpha = 0.4f))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .iosPressable { if (editWeeks < 52) editWeeks++ },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("+", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.accent)
+                                    }
+                                }
+                            }
+                        }
                     }
+                    IosFormDivider()
+                    IosFormTextFieldRow(
+                        label = "年级",
+                        value = editGrade,
+                        onValueChange = { editGrade = it },
+                        placeholder = "如: 大二 / 2024级"
+                    )
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showManageSemestersDialog = false }) {
-                    Text("Close")
-                }
+                Spacer(Modifier.height(24.dp))
             }
-        )
+        }
     }
 
-    // Delete Semester Dialog
+    // Delete Semester Confirmation Dialog
     termToDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { termToDelete = null },
-            title = { Text("Delete Semester?") },
-            text = { Text("Delete ${target.displayName} and its courses, assignments, exams and semester plans? This cannot be undone.") },
+            title = { Text("删除学期？") },
+            text = { Text("确定删除「${target.displayName}」及其所有课表、作业、考试和计划数据吗？此操作不可撤销。") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -551,150 +725,47 @@ fun SettingsScreen(
                             withContext(Dispatchers.Main) {
                                 if (isDeletingCurrent && replacement != null) {
                                     onTermChanged(replacement)
+                                    currentDraft = TermDraft(replacement)
                                 }
                                 termToDelete = null
                             }
                         }
                     }
                 ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("删除", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { termToDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { termToDelete = null }) { Text("取消") }
             }
         )
     }
 
-    // Edit Semester Dialog
-    termToEdit?.let { target ->
-        var editName by remember(target) { mutableStateOf(target.name) }
-        var editWeeks by remember(target) { mutableIntStateOf(target.totalWeeks) }
-        var editSeason by remember(target) { mutableStateOf(try { TermSeason.valueOf(target.termSeason) } catch(e: Exception) { TermSeason.FALL }) }
-        var editStartDate by remember(target) { mutableLongStateOf(target.termStartDate) }
-
+    // Clear Current Semester Confirmation Dialog
+    if (showClearDialog) {
         AlertDialog(
-            onDismissRequest = { termToEdit = null },
-            title = { Text("Edit Semester") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Semester Name") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Total Weeks: $editWeeks")
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            FilledTonalButton(onClick = { if (editWeeks > 1) editWeeks-- }) { Text("-") }
-                            FilledTonalButton(onClick = { if (editWeeks < 30) editWeeks++ }) { Text("+") }
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TermSeason.entries.forEach { s ->
-                            FilterChip(
-                                selected = editSeason == s,
-                                onClick = { editSeason = s },
-                                label = { Text(s.displayName) }
-                            )
-                        }
-                    }
-                }
-            },
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("清空当前学期数据？") },
+            text = { Text("确定清空「${term.displayName}」下的所有课程、待办作业和考试日程吗？此操作不可撤销。") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         coroutineScope.launch(Dispatchers.IO) {
-                            val updated = target.copy(
-                                name = editName.trim(),
-                                totalWeeks = editWeeks,
-                                termSeason = editSeason.name,
-                                termStartDate = editStartDate
-                            )
-                            database.settingDao().update(updated)
+                            database.courseDao().deleteByTermId(term.id)
+                            database.assignmentDao().deleteByTermId(term.id)
+                            database.examDao().deleteByTermId(term.id)
                             withContext(Dispatchers.Main) {
-                                if (target.id == term.id) {
-                                    currentDraft = TermDraft(updated)
-                                    onTermChanged(updated)
-                                }
-                                termToEdit = null
+                                showClearDialog = false
+                                Toast.makeText(context, "已清空「${term.displayName}」的全部数据", Toast.LENGTH_SHORT).show()
                             }
                         }
-                    },
-                    enabled = editName.trim().isNotEmpty()
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { termToEdit = null }) { Text("Cancel") }
-            }
-        )
-    }
-
-    // Clear Data Dialog
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Semester Data?") },
-            text = { Text("This will permanently delete all courses, schedule sessions, assignments, exams, and plans in ${term.displayName}. This action cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    coroutineScope.launch(Dispatchers.IO) {
-                        database.courseDao().deleteByTermId(term.id)
-                        database.assignmentDao().deleteByTermId(term.id)
-                        database.examDao().deleteByTermId(term.id)
-                        database.flexiblePlanDao().deleteByTermId(term.id)
-                        withContext(Dispatchers.Main) {
-                            showClearDialog = false
-                            statusMessage = "Cleared data for ${term.displayName}."
-                        }
                     }
-                }) {
-                    Text("Clear Everything", color = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("清空", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    // Status / Import Result Alert
-    importResult?.let { summary ->
-        AlertDialog(
-            onDismissRequest = { importResult = null },
-            title = { Text("Import Successful") },
-            text = { Text(summary.message) },
-            confirmButton = {
-                TextButton(onClick = { importResult = null }) { Text("OK") }
-            }
-        )
-    }
-
-    importError?.let { err ->
-        AlertDialog(
-            onDismissRequest = { importError = null },
-            title = { Text("Import Failed") },
-            text = { Text(err) },
-            confirmButton = {
-                TextButton(onClick = { importError = null }) { Text("OK") }
-            }
-        )
-    }
-
-    statusMessage?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { statusMessage = null },
-            title = { Text("Notice") },
-            text = { Text(msg) },
-            confirmButton = {
-                TextButton(onClick = { statusMessage = null }) { Text("OK") }
+                TextButton(onClick = { showClearDialog = false }) { Text("取消") }
             }
         )
     }

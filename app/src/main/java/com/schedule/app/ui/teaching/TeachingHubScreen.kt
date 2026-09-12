@@ -240,7 +240,19 @@ fun TeachingHubScreen(
                                 enabled = !isRefreshing,
                                 onClick = {
                                     showOptionsMenu = false
-                                    scope.launch { store.refresh() }
+                                    scope.launch {
+                                        try {
+                                            store.refresh()
+                                            Toast.makeText(context, "教学网数据同步完成", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            if (e is com.schedule.app.teaching.TeachingError.LoginRequired || !store.isSignedIn.value) {
+                                                Toast.makeText(context, "登录会话已过期，请重新登录教学网", Toast.LENGTH_LONG).show()
+                                                showLoginScreen = true
+                                            } else {
+                                                Toast.makeText(context, "同步失败: ${e.localizedMessage ?: "网络错误"}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
                                 }
                             )
 
@@ -393,17 +405,17 @@ fun TeachingHubScreen(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = if (isSignedIn) "已连接教学网" else "未连接教学网",
+                                text = if (isSignedIn) "已连接教学网" else "教学网未连接 (已离线)",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 17.sp
                                 ),
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = if (isSignedIn) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
                             )
                             val fetchedAt = snapshot.fetchedAt
                             if (fetchedAt > 0) {
                                 Text(
-                                    text = "更新于 ${DateFormatUtil.formatDateTime(fetchedAt)}",
+                                    text = if (isSignedIn) "更新于 ${DateFormatUtil.formatDateTime(fetchedAt)}" else "上次同步: ${DateFormatUtil.formatDateTime(fetchedAt)}",
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -417,24 +429,47 @@ fun TeachingHubScreen(
                                 color = AppTheme.colors.accent
                             )
                         } else if (!isSignedIn) {
-                            Text(
-                                text = "登录",
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
                                 color = AppTheme.colors.accent,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                 modifier = Modifier.iosPressable { showLoginScreen = true }
-                            )
+                            ) {
+                                Text(
+                                    text = "重新登录",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
                         }
                     }
 
                     // Progress or status message
                     if (!storeMessage.isNullOrBlank()) {
                         IosFormDivider()
-                        Text(
-                            text = storeMessage!!,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+                        val isError = storeMessage!!.contains("失败") || storeMessage!!.contains("过期") || storeMessage!!.contains("异常")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = storeMessage!!,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                color = if (isError) MaterialTheme.colorScheme.error else AppTheme.colors.accent,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isError && !isSignedIn) {
+                                Text(
+                                    text = "去登录",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
+                                    color = AppTheme.colors.accent,
+                                    modifier = Modifier.iosPressable { showLoginScreen = true }
+                                )
+                            }
+                        }
                     }
 
                     // Row 2: Course Filter (iOS Form Row)

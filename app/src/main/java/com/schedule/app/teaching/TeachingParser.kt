@@ -551,50 +551,53 @@ object TeachingParser {
         // 1. Keyword prefix with date:
         // Keywords: 截止时间, 截止日期, 截止, 到期时间, 到期日, 到期, 提交时间, 提交截止, 提交期限, Due Date, Due, DDL, ddl, Ddl
         val prefixRegex = Regex(
-            """(?:截止时间|截止日期|截止|到期时间|到期日|到期|提交时间|提交截止|提交期限|Due\s*Date|Due|DDL|ddl|Ddl)[:：\s]+([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,35})"""
+            """(?:截止时间|截止日期|截止|到期时间|到期日|到期|提交时间|提交截止|提交期限|Due\s*Date|Due|DDL|ddl|Ddl)[:：\s]+([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,45})"""
         )
         prefixRegex.find(clean)?.let {
             return it.groupValues[1].trim()
         }
 
-        // 2. Date followed by keyword (e.g. "10月20日 23:59 截止", "10月20日23:59前提交", "2024-10-20 23:59截止")
+        // 2. Date followed by keyword (e.g. "10月20日 23:59 截止", "10月20日 18:00前提交", "2024-10-20 23:59截止")
         val suffixRegex = Regex(
-            """([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,35}?)\s*(?:前(?:提交|上传)|截止|到期)"""
+            """([0-9]{1,4}[年\-/\.月][^\n\r<，,；;]{1,45}?)\s*(?:前(?:提交|上传)|截止|到期)"""
         )
         suffixRegex.find(clean)?.let {
             return it.groupValues[1].trim()
         }
 
-        // 3. Parentheses containing deadline (e.g. "(10月20日 23:59截止)", "(DDL: 10/20 23:59)")
+        // 3. Parentheses containing deadline (e.g. "(10月20日 23:59截止)", "(DDL: 10/20 18:00)")
         val parenRegex = Regex(
-            """[（\(](?:DDL|ddl|截止|到期)?[:：\s]*([0-9]{1,4}[年\-/\.月][^\)）\n\r<]{1,35}?)(?:前(?:提交|上传)|截止|到期)?[）\)]"""
+            """[（\(](?:DDL|ddl|截止|到期)?[:：\s]*([0-9]{1,4}[年\-/\.月][^\)）\n\r<]{1,45}?)(?:前(?:提交|上传)|截止|到期)?[）\)]"""
         )
         parenRegex.find(clean)?.let {
             return it.groupValues[1].trim()
         }
 
-        // 4. Chinese full date pattern directly
+        // 4. Chinese full date pattern directly (with or without weekday and time)
         val chineseFullRegex = Regex(
-            """(\d{4}年\d{1,2}月\d{1,2}日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(?:上午|下午|晚上|中午|早上))?\s*\d{1,2}[:：点时]\d{2}(?:[:：分秒]\d{2})?|\d{4}年\d{1,2}月\d{1,2}日)"""
+            """(\d{4}年\s*\d{1,2}月\s*\d{1,2}[日号]?(?:\s*[(（\[]?\s*(?:星期[一二三四五六日天七\d]|周[一二三四五六日天七\d]|礼拜[一二三四五六日天七\d]|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[)）\]]?)?(?:\s*(?:上午|下午|晚上|中午|早上|凌晨))?\s*(?:\d{1,2}[:：点时]\d{1,2}(?:[:：分秒]\d{2})?|\d{1,2}[点时](?:半|整)?|\d{1,2}[:：点时]\d{2})?)"""
         )
         chineseFullRegex.find(clean)?.let {
-            return it.groupValues[1].trim()
+            val candidate = it.groupValues[1].trim()
+            if (candidate.isNotEmpty()) return candidate
         }
 
-        // 5. Standard full date pattern directly (e.g. 2024-10-20 23:59)
+        // 5. Standard full date pattern directly (e.g. 2024-10-20 18:00 or 2024-10-20)
         val stdFullRegex = Regex(
-            """(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}(?:\s+\d{1,2}[:：]\d{2}(?:[:：]\d{2})?)?)"""
+            """(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}(?:\s*[(（\[]?\s*(?:星期[一二三四五六日天七\d]|周[一二三四五六日天七\d]|礼拜[一二三四五六日天七\d]|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[)）\]]?)?(?:\s+\d{1,2}[:：]\d{2}(?:[:：]\d{2})?)?)"""
         )
         stdFullRegex.find(clean)?.let {
-            return it.groupValues[1].trim()
+            val candidate = it.groupValues[1].trim()
+            if (candidate.isNotEmpty()) return candidate
         }
 
-        // 6. Chinese month-day with time directly (e.g. 10月20日 23:59)
+        // 6. Chinese month-day with time directly (e.g. 10月20日 18:00)
         val chineseMonthDayRegex = Regex(
-            """(\d{1,2}月\d{1,2}日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(?:上午|下午|晚上|中午|早上))?\s*\d{1,2}[:：点时]\d{2}(?:[:：分秒]\d{2})?)"""
+            """(\d{1,2}月\s*\d{1,2}[日号]?(?:\s*[(（\[]?\s*(?:星期[一二三四五六日天七\d]|周[一二三四五六日天七\d]|礼拜[一二三四五六日天七\d]|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[)）\]]?)?(?:\s*(?:上午|下午|晚上|中午|早上|凌晨))?\s*(?:\d{1,2}[:：点时]\d{1,2}(?:[:：分秒]\d{2})?|\d{1,2}[点时](?:半|整)?|\d{1,2}[:：点时]\d{2})?)"""
         )
         chineseMonthDayRegex.find(clean)?.let {
-            return it.groupValues[1].trim()
+            val candidate = it.groupValues[1].trim()
+            if (candidate.isNotEmpty()) return candidate
         }
 
         return null
@@ -735,19 +738,49 @@ object TeachingParser {
             }
         }
 
-        fun buildDate(year: Int, month: Int, day: Int, hourStr: String?, minStr: String?, secStr: String?, ampm: String?): Date? {
-            var hour = hourStr?.toIntOrNull() ?: 23
-            var minute = minStr?.toIntOrNull() ?: 59
-            var second = secStr?.toIntOrNull() ?: 0
+        fun buildDate(
+            year: Int,
+            month: Int,
+            day: Int,
+            hourStr: String?,
+            minStr: String?,
+            secStr: String?,
+            ampm: String?,
+            hasExplicitTime: Boolean
+        ): Date? {
+            var hour: Int
+            var minute: Int
+            var second: Int
 
-            // Handle 24:00 (frequent in Chinese assignment deadlines -> clamp to 23:59:59 of same day)
-            if (hour >= 24) {
+            if (hasExplicitTime && hourStr != null) {
+                var h = hourStr.toIntOrNull() ?: 23
+                var m = minStr?.toIntOrNull() ?: 0
+                var s = secStr?.toIntOrNull() ?: 0
+
+                val cleanAmpm = ampm?.trim()?.lowercase()
+                if (cleanAmpm in listOf("下午", "晚上", "夜间", "pm")) {
+                    if (h in 1..11) h += 12
+                } else if (cleanAmpm in listOf("上午", "早上", "凌晨", "am")) {
+                    if (h == 12) h = 0
+                } else if (cleanAmpm == "中午") {
+                    if (h in 1..11) h += 12
+                }
+
+                // Handle 24:00 (frequent in Chinese assignment deadlines -> clamp to 23:59:59 of same day)
+                if (h >= 24) {
+                    h = 23
+                    m = 59
+                    s = 59
+                }
+
+                hour = h
+                minute = m
+                second = s
+            } else {
+                // If NO explicit time was specified in the source, default to 23:59:00
                 hour = 23
                 minute = 59
-                second = 59
-            } else {
-                if ((ampm == "下午" || ampm == "晚上") && hour < 12) hour += 12
-                if (ampm == "上午" && hour == 12) hour = 0
+                second = 0
             }
 
             return try {
@@ -760,73 +793,93 @@ object TeachingParser {
             }
         }
 
-        // 2. Chinese pattern with full 4-digit year: 2024年10月15日 [星期二] [下午] 23:59[:00] or 23点59分 or 23点
-        val chineseFull = Regex(
-            """(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(上午|下午|晚上|中午|早上))?(?:\s*(\d{1,2})[:：点时](\d{2})(?:[:：分秒](\d{2}))?|\s*(\d{1,2})点)?"""
+        // --- Step A: Extract Time (if any) ---
+        var explicitHour: String? = null
+        var explicitMin: String? = null
+        var explicitSec: String? = null
+        var explicitAmpm: String? = null
+        var hasExplicitTime = false
+
+        // 1. Colon time: e.g. "18:00", "18:00:00", "18：30", "下午 5:30", "5:30pm"
+        val colonTimeRegex = Regex(
+            """(?:(上午|下午|晚上|中午|早上|凌晨|夜间)\s*)?(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?\s*(am|pm|AM|PM)?"""
         )
-        chineseFull.find(normalized)?.let { m ->
-            val year = m.groupValues[1].toInt()
-            val month = m.groupValues[2].toInt()
-            val day = m.groupValues[3].toInt()
-            val ampm = m.groupValues[4].takeIf { it.isNotEmpty() }
-            val hour = m.groupValues[5].ifEmpty { m.groupValues[8] }.takeIf { it.isNotEmpty() }
-            val minute = m.groupValues[6].takeIf { it.isNotEmpty() }
-            val second = m.groupValues[7].takeIf { it.isNotEmpty() }
-            val d = buildDate(year, month, day, hour, minute, second, ampm)
-            if (d != null) return d
+        // 2. Chinese 点/时 time: e.g. "18点", "18点30分", "18点半", "晚上8点", "下午5点整"
+        val chineseTimeRegex = Regex(
+            """(?:(上午|下午|晚上|中午|早上|凌晨|夜间)\s*)?(\d{1,2})[点时]\s*(?:(\d{1,2})分(?:\d{1,2}秒)?|([半整]))?"""
+        )
+        // 3. 12-hour English time without colon: e.g. "5pm", "8 am"
+        val english12hRegex = Regex(
+            """\b(\d{1,2})\s*(am|pm|AM|PM)\b"""
+        )
+
+        colonTimeRegex.find(normalized)?.let { m ->
+            hasExplicitTime = true
+            explicitAmpm = m.groupValues[1].ifEmpty { m.groupValues[4] }.takeIf { it.isNotEmpty() }
+            explicitHour = m.groupValues[2]
+            explicitMin = m.groupValues[3]
+            explicitSec = m.groupValues[4].takeIf { it.isNotEmpty() && it.toIntOrNull() != null }
+        } ?: chineseTimeRegex.find(normalized)?.let { m ->
+            hasExplicitTime = true
+            explicitAmpm = m.groupValues[1].takeIf { it.isNotEmpty() }
+            explicitHour = m.groupValues[2]
+            val modifier = m.groupValues[4]
+            explicitMin = if (modifier == "半") "30" else m.groupValues[3].takeIf { it.isNotEmpty() } ?: "0"
+            explicitSec = null
+        } ?: english12hRegex.find(normalized)?.let { m ->
+            hasExplicitTime = true
+            explicitHour = m.groupValues[1]
+            explicitMin = "0"
+            explicitAmpm = m.groupValues[2]
         }
 
-        // 3. Chinese pattern with month-day (no year): 10月15日 [星期二] [下午] 23:59[:00] or 23点59分 or 23点
-        val chineseMonthDay = Regex(
-            """(\d{1,2})月(\d{1,2})日(?:\s*(?:[(（]?星期\S[)）]?)?)?(?:\s*(上午|下午|晚上|中午|早上))?(?:\s*(\d{1,2})[:：点时](\d{2})(?:[:：分秒](\d{2}))?|\s*(\d{1,2})点)?"""
-        )
-        chineseMonthDay.find(normalized)?.let { m ->
-            val month = m.groupValues[1].toInt()
-            val day = m.groupValues[2].toInt()
-            if (month in 1..12 && day in 1..31) {
-                val year = inferYear(month)
-                val ampm = m.groupValues[3].takeIf { it.isNotEmpty() }
-                val hour = m.groupValues[4].ifEmpty { m.groupValues[7] }.takeIf { it.isNotEmpty() }
-                val minute = m.groupValues[5].takeIf { it.isNotEmpty() }
-                val second = m.groupValues[6].takeIf { it.isNotEmpty() }
-                val d = buildDate(year, month, day, hour, minute, second, ampm)
-                if (d != null) return d
+        // --- Step B: Extract Date (Year, Month, Day) ---
+
+        // 1. Chinese full date with 4-digit year: e.g. 2024年10月15日 or 2024年10月15号
+        val chineseYearRegex = Regex("""(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})[日号]?""")
+        chineseYearRegex.find(normalized)?.let { m ->
+            val y = m.groupValues[1].toInt()
+            val mo = m.groupValues[2].toInt()
+            val d = m.groupValues[3].toInt()
+            if (mo in 1..12 && d in 1..31) {
+                return buildDate(y, mo, d, explicitHour, explicitMin, explicitSec, explicitAmpm, hasExplicitTime)
             }
         }
 
-        // 4. Standard full date: 2024-10-15 23:59:00 or 2024/10/15 23:59 or 2024.10.15 23:59
-        val stdFull = Regex(
-            """(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})(?:\s+(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?)?"""
-        )
-        stdFull.find(normalized)?.let { m ->
-            val year = m.groupValues[1].toInt()
-            val month = m.groupValues[2].toInt()
-            val day = m.groupValues[3].toInt()
-            val hour = m.groupValues[4].takeIf { it.isNotEmpty() }
-            val minute = m.groupValues[5].takeIf { it.isNotEmpty() }
-            val second = m.groupValues[6].takeIf { it.isNotEmpty() }
-            val d = buildDate(year, month, day, hour, minute, second, null)
-            if (d != null) return d
-        }
-
-        // 5. Standard month-day with time: 10-15 23:59 or 10/15 23:59 or 10.15 23:59
-        val stdMonthDay = Regex(
-            """(?:^|[^\d])(\d{1,2})[-/\.](\d{1,2})\s+(\d{1,2})[:：](\d{2})(?:[:：](\d{2}))?"""
-        )
-        stdMonthDay.find(normalized)?.let { m ->
-            val month = m.groupValues[1].toInt()
-            val day = m.groupValues[2].toInt()
-            if (month in 1..12 && day in 1..31) {
-                val year = inferYear(month)
-                val hour = m.groupValues[3]
-                val minute = m.groupValues[4]
-                val second = m.groupValues[5].takeIf { it.isNotEmpty() }
-                val d = buildDate(year, month, day, hour, minute, second, null)
-                if (d != null) return d
+        // 2. Standard full date: e.g. 2024-10-15, 2024/10/15, 2024.10.15
+        val stdFullRegex = Regex("""(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})""")
+        stdFullRegex.find(normalized)?.let { m ->
+            val y = m.groupValues[1].toInt()
+            val mo = m.groupValues[2].toInt()
+            val d = m.groupValues[3].toInt()
+            if (mo in 1..12 && d in 1..31) {
+                return buildDate(y, mo, d, explicitHour, explicitMin, explicitSec, explicitAmpm, hasExplicitTime)
             }
         }
 
-        // 6. English patterns
+        // 3. Chinese month-day (inferred year): e.g. 10月15日 or 10月15号 or 10月15
+        val chineseMonthDayRegex = Regex("""(?:^|[^\d])(\d{1,2})月\s*(\d{1,2})[日号]?""")
+        chineseMonthDayRegex.find(normalized)?.let { m ->
+            val mo = m.groupValues[1].toInt()
+            val d = m.groupValues[2].toInt()
+            if (mo in 1..12 && d in 1..31) {
+                val y = inferYear(mo)
+                return buildDate(y, mo, d, explicitHour, explicitMin, explicitSec, explicitAmpm, hasExplicitTime)
+            }
+        }
+
+        // 4. Standard month-day (inferred year): e.g. 10/15 or 10-15
+        val stdMonthDayRegex = Regex("""(?:^|[^\d])(\d{1,2})[-/](\d{1,2})(?:$|[^\d])""")
+        stdMonthDayRegex.find(normalized)?.let { m ->
+            val mo = m.groupValues[1].toInt()
+            val d = m.groupValues[2].toInt()
+            if (mo in 1..12 && d in 1..31) {
+                val y = inferYear(mo)
+                return buildDate(y, mo, d, explicitHour, explicitMin, explicitSec, explicitAmpm, hasExplicitTime)
+            }
+        }
+
+        // 5. English formats
         val enFormats = listOf(
             "EEEE, MMMM d, yyyy h:mm:ss a",
             "EEEE, MMMM d, yyyy h:mm a",
@@ -839,7 +892,20 @@ object TeachingParser {
             try {
                 val sdf = SimpleDateFormat(format, Locale.US)
                 sdf.timeZone = TimeZone.getTimeZone("Asia/Shanghai")
-                return sdf.parse(normalized)
+                val parsed = sdf.parse(normalized)
+                if (parsed != null) {
+                    if (format == "MMM d, yyyy" && !hasExplicitTime) {
+                        val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai")).apply {
+                            time = parsed
+                            set(java.util.Calendar.HOUR_OF_DAY, 23)
+                            set(java.util.Calendar.MINUTE, 59)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        return cal.time
+                    }
+                    return parsed
+                }
             } catch (_: Exception) {}
         }
 

@@ -16,7 +16,65 @@ data class TeachingCourse(
     val isCurrent: Boolean,
 ) {
     val displayTitle: String
-        get() = title.replace(Regex("\\(.*?\\)"), "").trim()
+        get() = readableTitle(title)
+
+    companion object {
+        /**
+         * Cleans PKU Teaching Network raw course titles to extract ONLY the course name.
+         *
+         * Raw titles often include long academic year indicators, course codes, teaching task IDs, and term suffixes:
+         * - "(2024-2025-2)-04832540-0007802832-1:高等代数(I)(25-26学年第2学期)" -> "高等代数(I)"
+         * - "(2024-2025-2)-04832540-0007802832-1: 高等代数" -> "高等代数"
+         * - "04832540-0007802832-1: 高等代数(I)" -> "高等代数(I)"
+         * - "2024-2025-2-04832540-0007802832-1: 高等代数" -> "高等代数"
+         * - "(2024-2025学年第二学期)-04830110-01: 算法设计与分析" -> "算法设计与分析"
+         * - "[2024-2025-2]-04832540-1: 操作系统" -> "操作系统"
+         * - "04830110: 软件工程导论(01班)" -> "软件工程导论"
+         * - "04832540-0007802832-1 高等代数" -> "高等代数"
+         */
+        fun readableTitle(raw: String): String {
+            if (raw.isBlank()) return ""
+            var s = raw.trim()
+
+            // 1. If there is a colon (: or ：), check if the text before the colon is a course code / semester / ID prefix.
+            val colonIdx = s.indexOfFirst { it == ':' || it == '：' }
+            if (colonIdx > 0) {
+                val prefix = s.substring(0, colonIdx).trim()
+                val hasDigits = prefix.any { it.isDigit() }
+                val hasSemesterKeyword = prefix.contains("学年") || prefix.contains("学期") || prefix.contains("春") || prefix.contains("秋")
+                if (hasDigits || hasSemesterKeyword) {
+                    s = s.substring(colonIdx + 1).trim()
+                }
+            }
+
+            // 2. Strip bracketed semester/academic year prefix if still present
+            // e.g. "(2024-2025-2)-", "[2024-2025-2]", "【2024-2025学年第二学期】", "(25-26-2)", "(2025春)"
+            s = s.replace(
+                Regex("""^[(\[（【][^()\[\]（）【}]*(?:\d{2,4}-\d{2,4}|\d{2}-\d{2}|学年|学期|春|秋|夏|冬|semester|term)[^()\[\]（）【}]*[)\]）】][\s\-_:：]*""", RegexOption.IGNORE_CASE),
+                ""
+            )
+
+            // 3. Strip course code / numeric ID prefix if separated by whitespace, dash, or underscore
+            // e.g. "04832540-0007802832-1 高等代数", "04832540-1-高等代数", "-04832540-0007802832-1-高等代数", "04832540_0007802832_1_高等代数"
+            s = s.replace(Regex("""^[-_\s]*[a-zA-Z0-9]*\d{4,}[a-zA-Z0-9_-]*[\s\-_:：]+"""), "")
+
+            // 4. Strip semester / academic year suffix at the end of the course name
+            // e.g. "(25-26学年第2学期)", "(2024-2025学年第二学期)", "(2024-2025-2)", "(24-25秋)", "(2025春)"
+            s = s.replace(
+                Regex("""[\s\-_]*[(\[（【][^()\[\]（）【}]*(?:学年|学期|\d{2,4}-\d{2,4}|\d{2}-\d{2}|春季?|秋季?|夏季?|冬季?)[^()\[\]（）【}]*[)\]）】]\s*$"""),
+                ""
+            )
+
+            // 5. Strip class / section suffix if at the very end
+            // e.g. "-01班", "(01班)", "（01班）", " 01班", "_01班"
+            s = s.replace(Regex("""[\s\-_]*[(\[（【]?\d{1,3}班[)\]）】]?\s*$"""), "")
+
+            // 6. Clean any remaining leading/trailing punctuation and whitespace
+            s = s.trim().trim('-', '_', ':', '：', ' ')
+
+            return if (s.isNotEmpty()) s else raw.trim()
+        }
+    }
 }
 
 data class TeachingAttachment(
@@ -67,7 +125,7 @@ data class TeachingItem(
     val gradeStatus: String? = null
 ) {
     val displayCourseTitle: String
-        get() = courseTitle.replace(Regex("\\(.*?\\)"), "").trim()
+        get() = TeachingCourse.readableTitle(courseTitle)
 
     val itemReadKey: String
         get() = if (readKey.isNotEmpty()) readKey else "$id:${publishedText ?: ""}:${body.take(120).hashCode()}"

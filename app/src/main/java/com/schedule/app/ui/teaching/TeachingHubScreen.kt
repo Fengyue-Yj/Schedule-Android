@@ -596,9 +596,9 @@ fun TeachingHubScreen(
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                                     ),
                                     color = if (isSelected) AppTheme.colors.accent else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    modifier = Modifier.weight(1f)
                                 )
                                 if (isSelected) {
                                     Spacer(Modifier.width(8.dp))
